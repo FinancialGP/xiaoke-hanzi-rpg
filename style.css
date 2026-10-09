@@ -61,11 +61,6 @@ button{font-family:inherit;color:inherit}
 .btn.danger{background:#ffd9d6}
 .btn.small{min-height:52px;font-size:1rem}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.card{background:#fff;border:3px solid var(--ink);border-radius:14px;padding:10px 12px;box-shadow:3px 3px 0 var(--ink)}
-.card strong{display:block;color:var(--blue2);font-size:1.05rem}
-.card small{color:#555}
-.card.ready{background:#e9ffe9}.card.done{opacity:.6}.card.locked{opacity:.7;background:#eee}
-.card-label{font-weight:900;color:#fff;text-shadow:2px 2px 0 var(--ink);margin-top:4px}
 
 /* ---------- HUD ---------- */
 .hud{display:flex;gap:10px;align-items:center;background:#fff;border:3px solid var(--ink);border-radius:18px;padding:8px 12px;margin-bottom:12px;box-shadow:4px 5px 0 var(--ink)}
@@ -75,7 +70,6 @@ button{font-family:inherit;color:inherit}
 .bar{height:12px;background:#ddd;border:2px solid var(--ink);border-radius:8px;overflow:hidden;margin:3px 0}
 .bar span{display:block;height:100%;transition:width .4s}
 .bar .hp{background:linear-gradient(90deg,#ff5a5a,#ff9a3c)}.bar .xp{background:linear-gradient(90deg,#3fa0ff,#7ad0ff)}
-.ballrow{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
 
 /* ---------- 龙珠 ---------- */
 .dball{display:inline-block;width:var(--s,40px);height:var(--s,40px);flex:none;filter:drop-shadow(2px 2px 0 rgba(0,0,0,.35))}
@@ -173,14 +167,6 @@ button{font-family:inherit;color:inherit}
 .hzcell i{position:absolute;right:3px;bottom:0;font-style:normal;font-size:.7rem;font-family:var(--ui)}
 .m0{background:#fff}.m1{background:#ffe7c2}.m2{background:#fff59a}.m3{background:#b9f3c6}.m4{background:#8be3ff}
 
-/* ---------- 底部导航 ---------- */
-.hub-nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:repeat(5,1fr);gap:6px;max-width:640px;margin:0 auto;
-  padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));background:linear-gradient(0deg,var(--blue2),var(--blue));border-top:3px solid var(--ink)}
-.nav-btn{position:relative;display:flex;flex-direction:column;align-items:center;min-height:64px;justify-content:center;font-weight:900;font-size:.85rem;color:#fff;background:rgba(255,255,255,.12);
-  border:2px solid var(--ink);border-radius:14px;cursor:pointer;touch-action:manipulation}
-.nav-btn .icon{font-size:1.6rem}
-.nav-btn.active{background:var(--yellow);color:var(--ink)}
-.badge{position:absolute;top:2px;right:6px;background:var(--red);color:#fff;border-radius:50%;width:20px;height:20px;font-style:normal;display:grid;place-items:center;border:2px solid var(--ink);font-size:.75rem}
 .toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);z-index:100;background:var(--yellow);border:3px solid var(--ink);border-radius:24px;padding:10px 20px;font-weight:900;box-shadow:3px 3px 0 var(--ink);animation:toast 2.2s forwards;white-space:nowrap;pointer-events:none}
 @keyframes toast{0%{opacity:0;transform:translate(-50%,14px)}12%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-14px)}}
 .tag-voice{font-size:.8rem;font-weight:800;color:#555}
@@ -226,3 +212,19 @@ button{font-family:inherit;color:inherit}
 .avgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:10px}
 .btn.avpick{flex-direction:column;min-height:96px;padding:6px;gap:2px}
 .btn.avpick .avemo{font-size:44px}
+
+/* ── 数学 / 英语题、组词练习、修炼地点 ── */
+.qcount{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;max-width:340px;margin:8px auto;font-size:2.6rem;line-height:1.1}
+.qmath{font-family:var(--hanzi);font-size:3rem;font-weight:900;text-align:center;margin:10px 0}
+.qmath .blank{color:var(--orange2)}
+.qword.en,.opt.en{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.qword.en{font-size:3rem;font-weight:900;color:var(--blue2)}
+.opt.num{flex-direction:column;gap:0;line-height:1.05}
+.opt.num small{font-size:1rem;font-weight:900;color:#666;font-family:system-ui,sans-serif}
+.dots{letter-spacing:2px;color:var(--orange2)}
+.introwords{display:grid;gap:8px;margin:8px 0}
+.btn.wordchip{flex-direction:column;gap:2px;min-height:64px}
+.btn.wordchip b{font-family:var(--hanzi);font-size:1.6rem}
+.btn.wordchip small{font-size:.85rem;font-weight:700;color:#444}
+.place{display:flex;align-items:center;gap:10px;margin-top:6px;text-align:left}
+.place .pcoach{flex:0 0 auto}

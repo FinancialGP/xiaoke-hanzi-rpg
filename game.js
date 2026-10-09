@@ -1,6 +1,6 @@
 /**
  * 小侠客汉字龙珠 v4（基于「小侠客汉字江湖」v3 改版）
- * 模块：数据 · 玩家档案/存档 · 语音 · 间隔复习 · 出题 · 修炼(集龙珠) · 战斗 · 双人 · 江湖地图/任务/背包 · UI
+ * 模块：数据 · 玩家档案/存档 · 语音 · 间隔复习 · 出题（汉字为主 + 少量数学/英语） · 修炼(集龙珠) · 龙珠故事 · 双人 · UI
  * 纯静态网页：直接打开 index.html 即可。
  */
 (function (global) {
@@ -76,9 +76,11 @@
     win: function () { [392, 494, 587, 784].forEach(function (f, i) { setTimeout(function () { beep(f, 0.2); }, i * 120); }); }
   };
 
-  /* ═══════════════ 中文语音（speechSynthesis） ═══════════════ */
+  /* ═══════════════ 语音（speechSynthesis）：中文为主，英语题用英文语音 ═══════════════ */
+  var SPEECH_RATE = 0.65;          // 放慢语速，适合小朋友
   var TTS = {
-    voice: null, ok: false, supported: ("speechSynthesis" in global) && typeof global.SpeechSynthesisUtterance === "function",
+    voice: null, enVoice: null, ok: false, enOk: false,
+    supported: ("speechSynthesis" in global) && typeof global.SpeechSynthesisUtterance === "function",
     init: function () {
       if (!this.supported) return;
       var self = this;
@@ -87,23 +89,35 @@
         try { vs = global.speechSynthesis.getVoices() || []; } catch (e) { vs = []; }
         self.voice = vs.filter(function (v) { return /^(zh|cmn)[-_]?(CN|Hans)/i.test(v.lang); })[0] ||
           vs.filter(function (v) { return /^(zh|cmn)/i.test(v.lang); })[0] || null;
-        self.ok = !!self.voice;
+        self.enVoice = vs.filter(function (v) { return /^en[-_]?(US|GB|NZ|AU)/i.test(v.lang); })[0] ||
+          vs.filter(function (v) { return /^en/i.test(v.lang); })[0] || null;
+        self.ok = !!self.voice; self.enOk = !!self.enVoice;
         updateWho();
       };
       pickVoice();
       try { global.speechSynthesis.addEventListener("voiceschanged", pickVoice); } catch (e) { global.speechSynthesis.onvoiceschanged = pickVoice; }
     },
-    say: function (text, rate) {
-      if (!this.ok || !soundOn || !text) return false;
+    /** text 可以是字符串，也可以是数组（逐句朗读，句子之间自然停顿） */
+    speak: function (voice, text, rate) {
+      if (!voice || !soundOn || !text || !text.length) return false;
       try {
         global.speechSynthesis.cancel();
-        var u = new global.SpeechSynthesisUtterance(text);
-        u.voice = this.voice; u.lang = this.voice.lang || "zh-CN"; u.rate = rate || 0.75; u.pitch = 1.1;
-        global.speechSynthesis.speak(u);
+        [].concat(text).forEach(function (t) {
+          var u = new global.SpeechSynthesisUtterance(t);
+          u.voice = voice; u.lang = voice.lang; u.rate = rate || SPEECH_RATE; u.pitch = 1.1;
+          global.speechSynthesis.speak(u);
+        });
         return true;
       } catch (e) { return false; }
-    }
+    },
+    say: function (text, rate) { return this.ok && this.speak(this.voice, text, rate); },
+    sayEn: function (text, rate) { return this.enOk && this.speak(this.enVoice, text, rate || 0.7); }
   };
+  /** 单字朗读：先读字，停一下，再在词里读一次（如「大」→「大，大小的大」） */
+  function charSpeech(c) {
+    var it = BYC[c], w = it && (it.w || []).filter(function (x) { return x.w.length === 2; })[0];
+    return w ? [c, w.w + "的" + c] : [c];
+  }
 
   /* ═══════════════ 原创 SVG 图形 ═══════════════ */
   var STAR_POS = {
@@ -146,14 +160,17 @@
   /* ═══════════════ 原创 Q 版小武术家头像（致敬，非官方图） ═══════════════ */
   var AVATAR_INFO = {
     goku: { label: "小悟空", desc: "刺猬头 · 猴尾巴 · 如意棒" },
-    krillin: { label: "小库林", desc: "小光头 · 额头六个点 · 爱笑" }
+    krillin: { label: "小库林", desc: "小光头 · 额头六个点 · 爱笑" },
+    tien: { label: "天津饭", desc: "光头 · 额头第三只眼 · 绿色上衣" },
+    chiaotzu: { label: "饺子", desc: "小个子 · 白白的脸 · 红脸蛋 · 小帽子" }
   };
-  function chibiBody() {
-    // 橙色练功服 + 蓝色腰带 + 蓝色内衫领口
-    return '<path d="M26 98 Q26 72 50 70 Q74 72 74 98 Z" fill="#ff8a00" stroke="#141414" stroke-width="2.5"/>' +
-      '<path d="M41 71 L50 84 L59 71 Z" fill="#1e5bd8" stroke="#141414" stroke-width="2"/>' +
-      '<rect x="27" y="86" width="46" height="7" rx="2" fill="#1e5bd8" stroke="#141414" stroke-width="2"/>' +
-      '<path d="M47 93 L44 99 M53 93 L56 99" stroke="#1e5bd8" stroke-width="3" stroke-linecap="round"/>';
+  function chibiBody(top, trim) {
+    // 练功服：上衣颜色 + 领口/腰带颜色
+    top = top || "#ff8a00"; trim = trim || "#1e5bd8";
+    return '<path d="M26 98 Q26 72 50 70 Q74 72 74 98 Z" fill="' + top + '" stroke="#141414" stroke-width="2.5"/>' +
+      '<path d="M41 71 L50 84 L59 71 Z" fill="' + trim + '" stroke="#141414" stroke-width="2"/>' +
+      '<rect x="27" y="86" width="46" height="7" rx="2" fill="' + trim + '" stroke="#141414" stroke-width="2"/>' +
+      '<path d="M47 93 L44 99 M53 93 L56 99" stroke="' + trim + '" stroke-width="3" stroke-linecap="round"/>';
   }
   function chibiFace(bigSmile) {
     var mouth = bigSmile
@@ -163,10 +180,14 @@
       '<circle cx="42.3" cy="45" r="1.6" fill="#fff"/><circle cx="60.3" cy="45" r="1.6" fill="#fff"/>' +
       '<ellipse cx="35" cy="54" rx="3.5" ry="2" fill="#ff9a8a" opacity=".7"/><ellipse cx="65" cy="54" rx="3.5" ry="2" fill="#ff9a8a" opacity=".7"/>' + mouth;
   }
-  function avatarSVG(kind, size) {
-    var s = '<svg class="avsvg" width="' + size + '" height="' + size + '" viewBox="0 0 100 100" role="img" aria-label="' + AVATAR_INFO[kind].label + '">';
-    if (kind === "goku") {
-      s += '<path d="M70 92 Q92 92 88 76 Q85 66 92 62" fill="none" stroke="#141414" stroke-width="8" stroke-linecap="round"/>' +   // 猴尾巴（描边）
+  function baldHead(skin, cy, r) {
+    return '<circle cx="28" cy="' + (cy + 4) + '" r="5" fill="' + skin + '" stroke="#141414" stroke-width="2"/><circle cx="72" cy="' + (cy + 4) + '" r="5" fill="' + skin + '" stroke="#141414" stroke-width="2"/>' +
+      '<circle cx="50" cy="' + cy + '" r="' + r + '" fill="' + skin + '" stroke="#141414" stroke-width="2.5"/>' +
+      '<ellipse cx="42" cy="' + (cy - 15) + '" rx="7" ry="3.5" fill="#fff" opacity=".6" transform="rotate(-20 42 ' + (cy - 15) + ')"/>';   // 光头高光
+  }
+  var AVATAR_DRAW = {
+    goku: function () {
+      return '<path d="M70 92 Q92 92 88 76 Q85 66 92 62" fill="none" stroke="#141414" stroke-width="8" stroke-linecap="round"/>' +   // 猴尾巴（描边）
         '<path d="M70 92 Q92 92 88 76 Q85 66 92 62" fill="none" stroke="#8a4b1f" stroke-width="5" stroke-linecap="round"/>' +
         '<g transform="rotate(-38 50 60)"><rect x="47" y="8" width="6" height="96" rx="3" fill="#d4232c" stroke="#141414" stroke-width="2"/>' +  // 背上的如意棒
         '<rect x="46" y="8" width="8" height="7" rx="2" fill="#ffc400" stroke="#141414" stroke-width="1.5"/><rect x="46" y="96" width="8" height="7" rx="2" fill="#ffc400" stroke="#141414" stroke-width="1.5"/></g>' +
@@ -177,20 +198,41 @@
         '<path d="M27 50 L16 36 L29 36 L19 18 L36 26 L36 8 L48 22 L58 4 L62 22 L78 10 L72 28 L88 24 L76 38 L85 46 L73 44 L70 36 L64 41 L59 32 L53 39 L47 31 L42 40 L36 33 L31 42 Z" fill="#141414" stroke="#141414" stroke-width="2" stroke-linejoin="round"/>' +
         '<path d="M37 41 L45 43 M63 43 L55 41" stroke="#141414" stroke-width="2.5" stroke-linecap="round"/>' +
         chibiFace(false);
-    } else {
-      s += chibiBody() +
-        '<circle cx="28" cy="50" r="5" fill="#ffd9b0" stroke="#141414" stroke-width="2"/><circle cx="72" cy="50" r="5" fill="#ffd9b0" stroke="#141414" stroke-width="2"/>' +
-        '<circle cx="50" cy="46" r="23" fill="#ffd9b0" stroke="#141414" stroke-width="2.5"/>' +
-        '<ellipse cx="42" cy="31" rx="7" ry="3.5" fill="#fff" opacity=".6" transform="rotate(-20 42 31)"/>' +   // 光头高光
+    },
+    krillin: function () {
+      return chibiBody() + baldHead("#ffd9b0", 46, 23) +
         // 额头六个小点（两排各三个）
         '<circle cx="43" cy="29" r="1.6" fill="#8a4b1f"/><circle cx="50" cy="28" r="1.6" fill="#8a4b1f"/><circle cx="57" cy="29" r="1.6" fill="#8a4b1f"/>' +
         '<circle cx="43" cy="35" r="1.6" fill="#8a4b1f"/><circle cx="50" cy="34" r="1.6" fill="#8a4b1f"/><circle cx="57" cy="35" r="1.6" fill="#8a4b1f"/>' +
         '<path d="M37 41 Q41 39 45 41 M55 41 Q59 39 63 41" fill="none" stroke="#141414" stroke-width="2.2" stroke-linecap="round"/>' +
         chibiFace(true);
+    },
+    tien: function () {
+      // 光头 + 额头第三只眼 + 绿色上衣（红色腰带）
+      return chibiBody("#2f9e4a", "#d4232c") + baldHead("#f5c99a", 46, 23) +
+        '<ellipse cx="50" cy="31" rx="3.6" ry="5.2" fill="#fff" stroke="#141414" stroke-width="1.8"/><ellipse cx="50" cy="31.5" rx="2" ry="3.2" fill="#141414"/><circle cx="50.8" cy="30" r=".9" fill="#fff"/>' +
+        '<path d="M35 41 L45 43.5 M65 41 L55 43.5" stroke="#141414" stroke-width="2.8" stroke-linecap="round"/>' +
+        '<ellipse cx="41" cy="48" rx="3.6" ry="5" fill="#141414"/><ellipse cx="59" cy="48" rx="3.6" ry="5" fill="#141414"/>' +
+        '<circle cx="42.2" cy="46" r="1.4" fill="#fff"/><circle cx="60.2" cy="46" r="1.4" fill="#fff"/>' +
+        '<path d="M44 59 Q50 62 56 59" fill="none" stroke="#141414" stroke-width="2.4" stroke-linecap="round"/>';
+    },
+    chiaotzu: function () {
+      // 小个子（整体缩小），白白的脸，红脸蛋，小红帽子
+      return '<g transform="translate(9 14) scale(.82)">' + chibiBody("#2f9e4a", "#ffc400") +
+        '<circle cx="28" cy="52" r="5" fill="#fdfaf6" stroke="#141414" stroke-width="2"/><circle cx="72" cy="52" r="5" fill="#fdfaf6" stroke="#141414" stroke-width="2"/>' +
+        '<circle cx="50" cy="48" r="24" fill="#fdfaf6" stroke="#141414" stroke-width="2.5"/>' +
+        '<path d="M31 34 Q50 8 69 34 Q50 28 31 34 Z" fill="#e3262f" stroke="#141414" stroke-width="2"/>' +
+        '<circle cx="50" cy="15" r="4.5" fill="#ffc400" stroke="#141414" stroke-width="1.5"/>' +
+        '<circle cx="35" cy="56" r="6" fill="#ff5a6a" opacity=".9"/><circle cx="65" cy="56" r="6" fill="#ff5a6a" opacity=".9"/>' +
+        '<ellipse cx="42" cy="47" rx="3.4" ry="4.6" fill="#141414"/><ellipse cx="58" cy="47" rx="3.4" ry="4.6" fill="#141414"/>' +
+        '<circle cx="43" cy="45.5" r="1.3" fill="#fff"/><circle cx="59" cy="45.5" r="1.3" fill="#fff"/>' +
+        '<path d="M45 59 Q50 63 55 59" fill="none" stroke="#141414" stroke-width="2.3" stroke-linecap="round"/></g>';
     }
-    return s + "</svg>";
+  };
+  function avatarSVG(kind, size) {
+    return '<svg class="avsvg" width="' + size + '" height="' + size + '" viewBox="0 0 100 100" role="img" aria-label="' + AVATAR_INFO[kind].label + '">' + AVATAR_DRAW[kind]() + "</svg>";
   }
-  /** 头像：goku / krillin 用原创 SVG，其余是 emoji */
+  /** 头像：小悟空 / 小库林 / 天津饭 / 饺子 用原创 SVG，其余是 emoji */
   function avatarHTML(ava, size) {
     size = size || 48;
     if (AVATAR_INFO[ava]) return avatarSVG(ava, size);
@@ -201,118 +243,44 @@
     return '<div class="rider"><span class="ava aura">' + avatarHTML(ava, 78) + (ava2 ? avatarHTML(ava2, 78) : "") + "</span>" + cloudSVG() + "</div>";
   }
 
-  /* ═══════════════ 江湖世界（沿用原版内容） ═══════════════ */
-  var LOCATIONS = [
-    { id: "village", name: "新手村", category: "village", emoji: "🏘️", unlock: {}, desc: "刚出茅庐的小侠客在此打基础。只有村民和启蒙师父。" },
-    { id: "huashan", name: "华山派", category: "sect", emoji: "⛰️", unlock: { level: 6, quest: "leave_village" }, desc: "华山论剑之地，剑气纵横，可遇见岳灵珊、陆大有等人。" },
-    { id: "fuwei", name: "福威镖局", category: "sect", emoji: "🏛️", unlock: { level: 6, quest: "leave_village", hanzi: 20 }, desc: "福州镖局，林平之在此苦练。" },
-    { id: "qingcheng", name: "青城派小镇", category: "town", emoji: "🎋", unlock: { level: 6, quest: "leave_village" }, desc: "青城四秀常在此招摇过市，是练手的好地方。" },
-    { id: "hengshan", name: "恒山脚下", category: "mountain", emoji: "🙏", unlock: { level: 6, quest: "leave_village", hanzi: 40 }, desc: "恒山派女弟子修行之处，清静适合识字。" },
-    { id: "luoyang", name: "洛阳城", category: "town", emoji: "🏯", unlock: { level: 6, quest: "meet_linghu" }, desc: "繁华古都，三教九流汇聚，江湖消息灵通。" },
-    { id: "heimu", name: "黑木崖", category: "mountain", emoji: "🌙", unlock: { level: 8, hanzi: 80 }, desc: "日月神教总坛，任盈盈、东方不败的传说之地。" },
-    { id: "songshan", name: "嵩山小路", category: "forest", emoji: "🌲", unlock: { level: 7, quest: "zhengpai" }, desc: "通往嵩山派的林间小道。" }
+  /* ═══════════════ 龙珠世界：修炼地点、贴纸、双人魔王 ═══════════════ */
+  // 修炼地点跟着故事进度解锁（story = 已完成的章节数）；教练头像见 07b_story.js 的 portraitHTML
+  var PLACES = [
+    { id: "home", name: "深山小屋", emoji: "🏡", story: 0, coach: "bulma", line: "每天练一点点，我们一起去找龙珠！" },
+    { id: "desert", name: "大沙漠", emoji: "🏜️", story: 2, coach: "yamcha", line: "沙漠里也要认真练字哦！" },
+    { id: "kame", name: "龟仙屋", emoji: "🐢", story: 3, coach: "roshi", line: "认真、冷静、不放弃！" },
+    { id: "arena", name: "天下第一武道会", emoji: "🏟️", story: 4, coach: "tien", line: "下一场比赛，看你的了！" }
   ];
-  var CATEGORY_LABEL = { village: "🏘️ 村落", sect: "⛩️ 门派", mountain: "⛰️ 山林", town: "🏯 城镇", forest: "🌲 野外" };
-
-  var QUESTS = [
-    { id: "basic_training", name: "基础修炼", emoji: "📖", desc: "学会 10 个汉字。", reward: { exp: 30, gold: 5 } },
-    { id: "leave_village", name: "初入江湖", emoji: "🗺️", desc: "领取「基础修炼」奖励，并升到 6 级，就能离开新手村。", reward: { exp: 20, gold: 10 } },
-    { id: "meet_yueling", name: "华山师妹", emoji: "🌸", desc: "到华山与岳灵珊对话一次。", reward: { exp: 25, gold: 8 } },
-    { id: "meet_linghu", name: "邂逅令狐冲", emoji: "🍶", desc: "在华山或洛阳与令狐冲对话。", reward: { exp: 40, gold: 15 } },
-    { id: "qingcheng_four", name: "教训青城四秀", emoji: "👊", desc: "在青城小镇打赢任意一名青城四秀（光说话不算哦）。", reward: { exp: 35, gold: 12 } },
-    { id: "zhengpai", name: "正派之名", emoji: "⚔️", desc: "拜入任意正派门派（华山/恒山/福威镖局）。", reward: { exp: 30, gold: 10 } },
-    { id: "hanzi_50", name: "识字半百", emoji: "✍️", desc: "累计学会 50 个汉字。", reward: { exp: 50, gold: 20 } },
-    { id: "hanzi_100", name: "百字秀才", emoji: "🎓", desc: "累计学会 100 个汉字。", reward: { exp: 80, gold: 30 } },
-    { id: "hanzi_200", name: "二百字少侠", emoji: "🏅", desc: "累计学会 200 个汉字。", reward: { exp: 120, gold: 50 } },
-    { id: "dragon_3", name: "三召神龙", emoji: "🐉", desc: "集齐 7 颗龙珠、召唤神龙 3 次。", reward: { exp: 40, gold: 20 } }
-  ];
-  var QUEST_CHECKERS = {
-    basic_training: function (p) { return learnedCount() >= 10; },
-    leave_village: function (p) { return p.level >= 6 && hasQuestDone("basic_training"); },
-    meet_yueling: function (p) { return !!p.flags.met_yueling; },
-    meet_linghu: function (p) { return !!p.flags.met_linghu; },
-    qingcheng_four: function (p) { return !!p.flags.beat_qingcheng; },
-    zhengpai: function (p) { return ["华山", "恒山", "福威镖局"].indexOf(p.sect) !== -1; },
-    hanzi_50: function () { return learnedCount() >= 50; },
-    hanzi_100: function () { return learnedCount() >= 100; },
-    hanzi_200: function () { return learnedCount() >= 200; },
-    dragon_3: function () { return (prof.wishes || 0) >= 3; }
-  };
-
-  var VILLAGE_NPCS = [
-    { id: "teacher", name: "启蒙师父", emoji: "👴", role: "传授汉字心法", dialogues: ["徒儿，先认字再练功！", "人、大、小、山、水——这是根基。", "答对一字，内力便增一分。集齐七颗龙珠还能召唤神龙！"] },
-    { id: "aunt", name: "村姑阿杏", emoji: "👩", role: "新手村村民", dialogues: ["小侠客，帮我把「水」「火」二字念对吧！", "村外有野狼，多练功呀。"] },
-    { id: "inn", name: "店小二", emoji: "🧑", role: "客栈", dialogues: ["客官，住店还是打尖？", "听说学会十个字、升到六级就能出村闯江湖哦！"] }
-  ];
-
-  // 战斗数值：取消原版的「敌人数值×2」，并按儿童难度微调
-  var NOVEL_CHARS = [
-    { id: "yueling", name: "岳灵珊", emoji: "🌸", sect: "华山", locations: ["huashan"], minLevel: 3, hp: 48, atk: 9, def: 4, exp: 40, gold: 12, dialogues: ["师兄！华山上的花开得可美了，一起学「花」字吧！", "我爹爹是岳掌门，你可别偷懒哦。"], questFlag: "met_yueling" },
-    { id: "ludayou", name: "陆大有", emoji: "😄", sect: "华山", locations: ["huashan"], minLevel: 3, hp: 38, atk: 7, def: 3, exp: 28, gold: 9, dialogues: ["大师哥最厉害了！咱们比试比试？"] },
-    { id: "gaogen", name: "高根明", emoji: "🧑", sect: "华山", locations: ["huashan"], minLevel: 3, hp: 34, atk: 6, def: 3, exp: 24, gold: 8, dialogues: ["师弟，一起练剑吧！"] },
-    { id: "linghu", name: "令狐冲", emoji: "🍶", sect: "华山", locations: ["huashan", "luoyang"], minLevel: 5, hp: 72, atk: 12, def: 6, exp: 55, gold: 18, dialogues: ["师弟，汉字练好了，剑才快！"], questFlag: "met_linghu" },
-    { id: "yuebuqun", name: "岳不群", emoji: "🧔", sect: "华山", locations: ["huashan", "songshan"], minLevel: 7, hp: 85, atk: 13, def: 8, exp: 85, gold: 35, boss: true, dialogues: ["华山派门下，当行侠仗义。"] },
-    { id: "linping", name: "林平之", emoji: "😤", sect: "福威镖局", locations: ["fuwei"], minLevel: 4, hp: 52, atk: 10, def: 5, exp: 45, gold: 15, dialogues: ["我要苦练武功，先练好「刀」字。"] },
-    { id: "renying", name: "任盈盈", emoji: "🎵", sect: "日月神教", locations: ["heimu", "luoyang"], minLevel: 6, hp: 65, atk: 11, def: 7, exp: 50, gold: 20, dialogues: ["琴音与文字都要用心。认识「月」吗？"] },
-    { id: "dongfang", name: "东方不败", emoji: "👑", sect: "日月神教", locations: ["heimu"], minLevel: 10, hp: 120, atk: 18, def: 10, exp: 150, gold: 80, boss: true, dialogues: ["天下武功，唯快不破。"] },
-    { id: "hou", name: "侯人英", emoji: "😏", sect: "青城", locations: ["qingcheng"], minLevel: 2, hp: 24, atk: 5, def: 2, exp: 15, gold: 5, qingcheng: true, dialogues: ["本公子乃青城四秀之首！"] },
-    { id: "hong", name: "洪人雄", emoji: "😤", sect: "青城", locations: ["qingcheng"], minLevel: 2, hp: 26, atk: 5, def: 2, exp: 17, gold: 6, qingcheng: true, dialogues: ["你算哪根葱？"] },
-    { id: "yuhao", name: "于人豪", emoji: "🙄", sect: "青城", locations: ["qingcheng"], minLevel: 3, hp: 28, atk: 6, def: 3, exp: 20, gold: 6, qingcheng: true, dialogues: ["青城派天下无敌！"] },
-    { id: "luo", name: "罗人杰", emoji: "😎", sect: "青城", locations: ["qingcheng"], minLevel: 3, hp: 30, atk: 6, def: 3, exp: 22, gold: 7, qingcheng: true, dialogues: ["四秀联手，你必败无疑！"] },
-    { id: "hengshan_nun", name: "恒山师姐", emoji: "🙏", sect: "恒山", locations: ["hengshan"], minLevel: 5, hp: 40, atk: 7, def: 6, exp: 30, gold: 10, dialogues: ["恒山派清修，先静心识字。"] }
-  ];
-  var WILD_MONSTERS = [
-    { name: "野狼", emoji: "🐺", hp: 18, atk: 3, exp: 10, gold: 3, loc: "village" },
-    { name: "山贼", emoji: "🦹", hp: 26, atk: 5, exp: 14, gold: 4, loc: "songshan" },
-    { name: "黑衣人", emoji: "🥷", hp: 35, atk: 7, exp: 25, gold: 8, loc: "luoyang" }
-  ];
-  var SKILLS = [
-    { id: "basic", name: "基础剑法", req: 1, atk: 2 }, { id: "zixia", name: "紫霞神功", req: 3, atk: 5, def: 2 },
-    { id: "dugu", name: "独孤九剑", req: 6, atk: 12 }, { id: "bixie", name: "辟邪剑谱", req: 8, atk: 10 },
-    { id: "xixing", name: "吸星大法", req: 10, atk: 8 }, { id: "kuihua", name: "葵花宝典", req: 12, atk: 15, def: 5 }
-  ];
-  var GEAR_TEMPLATES = [
-    { id: "cloth", name: "布衣", slot: "body", def: 1, drop: 0.35 }, { id: "bamboo", name: "竹剑", slot: "weapon", atk: 2, drop: 0.4 },
-    { id: "leather", name: "皮甲", slot: "body", def: 3, drop: 0.28 }, { id: "iron", name: "铁剑", slot: "weapon", atk: 5, drop: 0.2 },
-    { id: "huashan", name: "华山剑袍", slot: "body", def: 5, atk: 1, drop: 0.12 }, { id: "qingcheng", name: "青城靴", slot: "feet", def: 2, drop: 0.15 },
-    { id: "lin", name: "林家护腕", slot: "hands", atk: 3, def: 2, drop: 0.1 }, { id: "sunmoon", name: "日月令", slot: "accessory", atk: 4, def: 4, drop: 0.06 },
-    { id: "staff", name: "如意金棍", slot: "weapon", atk: 7, drop: 0 }, { id: "gi", name: "橙色练功服", slot: "body", def: 6, drop: 0 }
-  ];
-  var SLOT_NAME = { weapon: "兵器", body: "衣服", feet: "鞋", hands: "护腕", accessory: "饰物" };
-  var SECTS = ["华山", "青城", "日月神教", "恒山", "福威镖局"];
-  var STICKERS = ["🥋", "☁️", "⚡", "🐉", "🏯", "🍑", "🐒", "🥟", "🗡️", "🏮", "🐼", "🌟", "🍜", "🎋", "🦅", "🐯", "🌋", "🪁", "🥢", "🧧", "🐲", "🌈", "🚀", "🦖"];
+  function currentPlace(pr) {
+    var got = PLACES.filter(function (p) { return (pr.story || 0) >= p.story; });
+    return got[got.length - 1];
+  }
+  var STICKERS = ["🥋", "☁️", "⚡", "🐉", "🍑", "🐒", "🥟", "🐢", "🏝️", "🏜️", "🏟️", "🌟", "🍜", "🦖", "🌋", "🪁", "🌈", "🚀", "🐟", "🥛", "🔴", "🏆", "🍙", "🦕"];
   var DUO_BOSSES = [
     { name: "大魔王", emoji: "👹" }, { name: "巨猿怪", emoji: "🦍" }, { name: "机器人兵", emoji: "🤖" },
     { name: "外星大王", emoji: "👾" }, { name: "恐龙怪", emoji: "🦖" }
   ];
 
   /* ═══════════════ 玩家档案（每人独立进度） ═══════════════ */
-  var AVATARS = ["goku", "krillin", "🧒", "👦", "👶", "🐵", "🐯", "🐲", "🦊", "🐼"];
+  var AVATARS = ["goku", "krillin", "tien", "chiaotzu", "🧒", "👦", "👶", "🐵", "🐯", "🐲", "🦊", "🐼"];
   var COLORS = ["#ff8a00", "#1e5bd8", "#21a35b", "#c23bd4"];
 
-  function defaultPlayer() {
-    return {
-      level: 1, exp: 0, expNeed: expNeed(1), hp: 50, maxHp: 50, atk: 5, def: 2, gold: 0, sect: null,
-      skills: ["basic"], gear: { weapon: null, body: null, feet: null, hands: null, accessory: null },
-      inventory: [], questsDoneIds: [], flags: {}, location: "village", battlesWon: 0, bestStreak: 0
-    };
-  }
-  /** 升级所需经验：比原版平缓，约 3 关（每关 7 题）可升到 6 级出村 */
+  function defaultPlayer() { return { level: 1, exp: 0, expNeed: expNeed(1) }; }
+  /** 升级所需经验：平缓，几关就能升一级 */
   function expNeed(lv) { return 50 + (lv - 1) * 20 + Math.max(0, lv - 6) * (lv - 6) * 6; }
 
   function newProfile(name, mode, avatar, color) {
     return {
       id: "p" + now().toString(36) + Math.floor(Math.random() * 1e4),
       name: name, mode: mode, avatar: avatar, color: color,
-      player: defaultPlayer(), srs: {}, stage: 0, balls: 0, wishes: 0, stickers: [],
+      player: defaultPlayer(), srs: {}, stage: 0, wishes: 0, stickers: [], story: 0,
       sessions: 0, lastDay: "", dayStreak: 0, createdAt: now(),
-      settings: { pinyin: false }
+      extra: { math: 0, eng: 0 }, settings: { pinyin: false }
     };
   }
 
   var store = { ver: 4, profiles: [], lastId: null };
   var prof = null;   // 当前玩家
-  var P = null;      // 当前玩家的 RPG 数据
 
   function loadStore() {
     try {
@@ -330,28 +298,27 @@
     }
     store.profiles.forEach(normalizeProfile);
   }
+  /** 补齐缺的字段；旧存档里的气血、金币、装备、任务、门派等字段（已删除的玩法）一并清掉 */
   function normalizeProfile(pr) {
-    if (!pr.player || typeof pr.player !== "object") pr.player = defaultPlayer();
-    var d = defaultPlayer();
-    Object.keys(d).forEach(function (k) { if (pr.player[k] == null) pr.player[k] = d[k]; });
-    ["skills", "inventory", "questsDoneIds"].forEach(function (k) { if (!Array.isArray(pr.player[k])) pr.player[k] = d[k]; });
-    if (typeof pr.player.flags !== "object") pr.player.flags = {};
-    if (typeof pr.player.gear !== "object" || !pr.player.gear) pr.player.gear = d.gear;
-    pr.player.skills = pr.player.skills.filter(function (id) { return SKILLS.some(function (s) { return s.id === id; }); });
-    if (!LOCATIONS.some(function (l) { return l.id === pr.player.location; })) pr.player.location = "village";
+    var old = pr.player && typeof pr.player === "object" ? pr.player : {};
+    pr.player = defaultPlayer();
+    if (old.level > 0) pr.player.level = Math.floor(old.level);
+    if (old.exp >= 0) pr.player.exp = old.exp;
     pr.player.expNeed = expNeed(pr.player.level);
     if (!pr.srs || typeof pr.srs !== "object") pr.srs = {};
     if (!Array.isArray(pr.stickers)) pr.stickers = [];
     if (!pr.settings) pr.settings = { pinyin: false };
-    ["stage", "balls", "wishes", "sessions", "dayStreak", "story"].forEach(function (k) { if (typeof pr[k] !== "number") pr[k] = 0; });
+    if (!pr.extra || typeof pr.extra !== "object") pr.extra = { math: 0, eng: 0 };
+    delete pr.balls;
+    ["stage", "wishes", "sessions", "dayStreak", "story"].forEach(function (k) { if (typeof pr[k] !== "number") pr[k] = 0; });
   }
   function saveStore() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); return true; }
     catch (e) { toast("⚠️ 存档失败（浏览器存储已满或被禁用）"); return false; }
   }
-  function useProfile(pr) { if (pr !== prof && $("log")) $("log").innerHTML = ""; prof = pr; P = pr ? pr.player : null; store.lastId = pr ? pr.id : null; updateWho(); }
+  function useProfile(pr) { if (pr !== prof && $("log")) $("log").innerHTML = ""; prof = pr; store.lastId = pr ? pr.id : null; updateWho(); }
 
-  /* 旧版（v3 三个存档位）导入 */
+  /* 旧版（v3 三个存档位）导入：等级、经验和学过的字 */
   function legacySlots() {
     var out = [];
     for (var s = 1; s <= 3; s++) {
@@ -365,14 +332,8 @@
     return out;
   }
   function importLegacy(slotData, pr) {
-    var old = slotData.player, p = pr.player;
-    ["level", "exp", "hp", "maxHp", "atk", "def", "gold", "sect", "skills", "gear", "inventory", "flags", "location", "battlesWon"].forEach(function (k) {
-      if (old[k] != null) p[k] = old[k];
-    });
-    if (Array.isArray(old.questsDoneIds)) p.questsDoneIds = old.questsDoneIds.slice();
-    else if (typeof old.questsDoneIds === "string" && old.questsDoneIds) p.questsDoneIds = [old.questsDoneIds];
-    // 原版里「和青城四秀说话」就会被记成打赢（bug），导入时清掉这个标记，需要真的打赢一次
-    p.flags = Object.assign({}, old.flags || {}); delete p.flags.beat_qingcheng;
+    var old = slotData.player;
+    pr.player = { level: old.level || 1, exp: old.exp || 0 };
     (old.hanziLearned || []).forEach(function (c) {
       if (BYC[c] && !pr.srs[c]) pr.srs[c] = { b: 1, due: 0, seen: 1, ok: 1, bad: 0 };
     });
@@ -386,6 +347,8 @@
     if (!pr.srs[c]) pr.srs[c] = { b: 0, due: 0, seen: 0, ok: 0, bad: 0 };
     return pr.srs[c];
   }
+  /** 数学/英语题只记一次就答对的次数（给家长看），不进复习盒 */
+  function recordExtra(pr, kind, firstTry) { if (firstTry) pr.extra[kind] = (pr.extra[kind] || 0) + 1; }
   function learnedCount(pr) {
     pr = pr || prof;
     if (!pr) return 0;
@@ -486,7 +449,7 @@
     var item = BYC[c];
     var type = forceType || chooseType(pr, c);
     var n = optionCount(pr);
-    var q = { c: c, type: type, wrongs: 0, done: false, options: [], answer: null, speak: c, autoSpeak: true };
+    var q = { c: c, type: type, wrongs: 0, done: false, options: [], answer: null, speak: charSpeech(c), autoSpeak: true };
     var little = pr.mode === "little";
     if (type === "listen") {
       q.title = "听一听，是哪个字？"; q.en = "Listen and pick the character";
@@ -495,7 +458,7 @@
     } else if (type === "pic2char") {
       q.title = little ? "哪个是「" + item.pic + "」？" : "图里是哪个字？"; q.en = "Which character matches the picture?";
       q.pic = item.pic; q.optCls = "hz";
-      q.speak = little ? "哪个是" + c : c;
+      if (little) q.speak = ["哪个是" + c].concat(charSpeech(c).slice(1));
       q.options = [c].concat(distractChars(pr, c, n - 1));
     } else if (type === "char2pic") {
       q.title = "这个字是哪张图？"; q.en = "Which picture is it?";
@@ -554,6 +517,100 @@
     return q;
   }
 
+  /* ═══════════════ 少量数学题和英语题（汉字题仍占约 70% 以上） ═══════════════ */
+  var EXTRA_RATE = 0.25;          // 故事和双人模式里每题出数学/英语的概率
+  var EXTRA_PER_SESSION = 2;      // 修炼一关 7 题里最多 2 题（汉字题 ≥ 5/7 ≈ 71%）
+  var ZH_NUM = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
+    "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"];
+  // 「几个」的读法：2 读「两」
+  function zhCount(n) { return n === 2 ? "两" : ZH_NUM[n]; }
+  var COUNT_EMOJI = ["🍎", "🐟", "⭐", "🥟", "🍑", "🐢", "🔴", "🍙"];
+  // 英语词：英文、图、中文（中文词和英文义都在 CC-CEDICT 里核对过，见 test/verify_english.py）
+  var ENGLISH = [
+    ["cat", "🐱", "猫"], ["dog", "🐶", "狗"], ["fish", "🐟", "鱼"], ["bird", "🐦", "鸟"], ["horse", "🐴", "马"],
+    ["cow", "🐮", "牛"], ["sheep", "🐑", "羊"], ["monkey", "🐵", "猴子"], ["tiger", "🐯", "老虎"], ["rabbit", "🐰", "兔子"],
+    ["apple", "🍎", "苹果"], ["banana", "🍌", "香蕉"], ["milk", "🥛", "牛奶"], ["egg", "🥚", "鸡蛋"], ["cake", "🎂", "蛋糕"],
+    ["sun", "☀️", "太阳"], ["moon", "🌙", "月亮"], ["star", "⭐", "星星"], ["rain", "🌧️", "雨"], ["tree", "🌳", "树"],
+    ["flower", "🌸", "花"], ["car", "🚗", "汽车"], ["book", "📖", "书"], ["water", "💧", "水"], ["fire", "🔥", "火"],
+    ["hand", "✋", "手"], ["eye", "👁️", "眼睛"], ["ear", "👂", "耳朵"], ["dragon", "🐉", "龙"], ["ball", "⚽", "球"],
+    ["red", "🔴", "红色"], ["blue", "🔵", "蓝色"], ["yellow", "🟡", "黄色"], ["green", "🟢", "绿色"],
+    ["one", "1️⃣", "一"], ["two", "2️⃣", "二"], ["three", "3️⃣", "三"], ["four", "4️⃣", "四"], ["five", "5️⃣", "五"]
+  ];
+  var lastExtra = "eng";
+  function nextExtraKind() { lastExtra = lastExtra === "math" ? "eng" : "math"; return lastExtra; }
+  /** 故事 / 双人：按概率决定这一题是不是数学/英语题 */
+  function maybeExtra(pr) { return Math.random() < EXTRA_RATE ? makeExtra(pr, nextExtraKind()) : null; }
+
+  function numOpt(n) { return '<b>' + ZH_NUM[n] + "</b><small>" + n + "</small>"; }
+  function nearNumbers(ans, lo, hi, k) {
+    var c = [];
+    [1, -1, 2, -2, 3, -3, 4, -4, 5, -5].forEach(function (d) { var x = ans + d; if (x >= lo && x <= hi && c.indexOf(x) === -1) c.push(x); });
+    return shuffle(c.slice(0, Math.max(k + 1, 4))).slice(0, k);
+  }
+  function baseExtra(kind, type) {
+    return { kind: kind, type: type, wrongs: 0, done: false, autoSpeak: true, optHTML: true, optMap: {}, options: [] };
+  }
+
+  /** 生成一道数学或英语题（答案在出题时就算好/查好） */
+  function makeExtra(pr, kind) {
+    var n = optionCount(pr), little = pr.mode === "little", q;
+    if (kind === "math") {
+      if (little) {
+        var max = pr.stage < 3 ? 5 : 10, cnt = 1 + Math.floor(Math.random() * max), em = pick(COUNT_EMOJI);
+        q = baseExtra("math", "count");
+        q.title = "数一数，有几个？"; q.en = "How many?";
+        q.mainHTML = '<div class="qcount" id="qTarget">' + new Array(cnt + 1).join("<span>" + em + "</span>") + "</div>";
+        q.answer = cnt; q.speak = "数一数，有几个？"; q.sayAnswer = "一共有" + zhCount(cnt) + "个";
+        q.hintHTML = '<span class="py">' + cnt + "</span> " + ZH_NUM[cnt];
+        q.options = [cnt].concat(nearNumbers(cnt, 1, max, n - 1));
+      } else {
+        var lim = pr.stage < 3 ? 10 : 20, a, b, plus = Math.random() < 0.55;
+        if (plus) { a = 1 + Math.floor(Math.random() * (lim - 1)); b = 1 + Math.floor(Math.random() * (lim - a)); }
+        else { a = 2 + Math.floor(Math.random() * (lim - 1)); b = 1 + Math.floor(Math.random() * a); }
+        var ans = plus ? a + b : a - b, op = plus ? "+" : "−", opZh = plus ? "加" : "减";
+        q = baseExtra("math", plus ? "add" : "sub");
+        q.title = "算一算"; q.en = a + " " + op + " " + b + " = ?";
+        q.mainHTML = '<div class="qmath" id="qTarget">' + ZH_NUM[a] + " " + op + " " + ZH_NUM[b] + ' = <span class="blank">？</span></div>';
+        q.answer = ans; q.speak = ZH_NUM[a] + opZh + ZH_NUM[b] + "等于几？";
+        q.sayAnswer = ZH_NUM[a] + opZh + ZH_NUM[b] + "等于" + ZH_NUM[ans];
+        q.hintHTML = '<span class="py">' + a + " " + op + " " + b + "</span> " +
+          (lim <= 10 ? '<span class="dots">' + new Array(a + 1).join("●") + (plus ? " + " : " − ") + new Array(b + 1).join("●") + "</span>" : "");
+        q.options = [ans].concat(nearNumbers(ans, 0, lim, n - 1));
+      }
+      q.answerKey = String(q.answer); q.optCls = "hz num";
+      q.options = q.options.map(String);
+      q.options.forEach(function (o) { q.optMap[o] = numOpt(+o); });
+    } else {
+      var it = pick(ENGLISH), others = shuffle(ENGLISH.filter(function (x) { return x !== it; })).slice(0, n - 1);
+      var types = little ? ["en2pic"] : ["en2pic", "pic2en", "en2zh", "zh2en"];
+      q = baseExtra("eng", pick(types));
+      var all = [it].concat(others);
+      q.item = it; q.speakEn = it[0]; q.sayAnswer = it[2];
+      q.hintHTML = it[1] + ' <b>' + esc(it[0]) + "</b> " + esc(it[2]);
+      if (q.type === "en2pic") {
+        q.title = "英语：哪个是「" + it[0] + "」？"; q.en = "Which picture is \u201c" + it[0] + "\u201d?";
+        q.mainHTML = '<div class="qword en" id="qTarget">' + esc(it[0]) + "</div>"; q.optCls = "emo";
+        all.forEach(function (x) { q.optMap[x[0]] = esc(x[1]); });
+      } else if (q.type === "pic2en") {
+        q.title = "英语：这个用英语怎么说？"; q.en = "What is this in English?";
+        q.mainHTML = '<div class="qpic">' + it[1] + "</div>"; q.optCls = "en"; q.speak = "这个用英语怎么说？"; q.speakEn = null;
+        all.forEach(function (x) { q.optMap[x[0]] = esc(x[0]); });
+      } else if (q.type === "en2zh") {
+        q.title = "英语「" + it[0] + "」是哪个中文？"; q.en = "Which Chinese word means \u201c" + it[0] + "\u201d?";
+        q.mainHTML = '<div class="qword en" id="qTarget">' + esc(it[0]) + "</div>"; q.optCls = "word";
+        all.forEach(function (x) { q.optMap[x[0]] = esc(x[2]); });
+      } else {
+        q.title = "「" + it[2] + "」用英语怎么说？"; q.en = "How do you say it in English?";
+        q.mainHTML = '<div class="qword" id="qTarget">' + esc(it[2]) + "</div>"; q.optCls = "en"; q.speak = it[2]; q.speakEn = null;
+        all.forEach(function (x) { q.optMap[x[0]] = esc(x[0]); });
+      }
+      q.options = all.map(function (x) { return x[0]; });
+      q.answerKey = it[0];
+    }
+    q.options = shuffle(q.options);
+    return q;
+  }
+
   /* ═══════════════ UI 基础 ═══════════════ */
   var screen = "title";
   function addLog(msg, cls) {
@@ -585,14 +642,6 @@
     return b;
   }
   function addBtn(label, fn, opts) { var b = btn(label, fn, opts); $("menu").appendChild(b); return b; }
-  function showNav(show) {
-    $("hubNav").classList.toggle("hidden", !show);
-    var ready = prof && prof.mode === "hero" && QUESTS.some(isQuestReady);
-    $("questBadge").classList.toggle("hidden", !ready);
-  }
-  function setNavActive(a) {
-    document.querySelectorAll(".nav-btn").forEach(function (b) { b.classList.toggle("active", b.dataset.action === a); });
-  }
   function speedLines(on) { $("speed").classList.toggle("hidden", !on); }
   function showScene(show) { $("scene").classList.toggle("hidden", !show); }
   function hideQuiz() { curQ = null; $("quiz").classList.add("hidden"); $("quiz").innerHTML = ""; speedLines(false); }
@@ -609,17 +658,11 @@
   function renderHUD() {
     var h = $("hud");
     if (!prof) { h.innerHTML = ""; return; }
-    var hpPct = Math.min(100, P.hp / P.maxHp * 100), xpPct = Math.min(100, P.exp / P.expNeed * 100);
-    if (prof.mode === "little") {
-      h.innerHTML = '<div class="hud"><div class="ava" style="background:' + prof.color + '">' + avatarHTML(prof.avatar, 56) + '</div><div class="info"><div class="name">' +
-        esc(prof.name) + '</div>认识 ' + learnedCount() + ' 个字 · 🐉×' + prof.wishes + ' · 贴纸 ' + prof.stickers.length + '</div></div>';
-      return;
-    }
+    var P = prof.player, stats = "📚 " + learnedCount() + " 字 · 🐉×" + prof.wishes + " · 🌟" + prof.stickers.length;
     h.innerHTML = '<div class="hud"><div class="ava" style="background:' + prof.color + '">' + avatarHTML(prof.avatar, 56) + '</div><div class="info">' +
-      '<div class="name">' + esc(prof.name) + ' · Lv.' + P.level + '</div>' +
-      '<div class="bar" title="气血"><span class="hp" style="width:' + hpPct + '%"></span></div>' +
-      '<div class="bar" title="经验"><span class="xp" style="width:' + xpPct + '%"></span></div>' +
-      '❤️' + P.hp + '/' + P.maxHp + ' ⚔️' + totalAtk() + ' 🛡️' + totalDef() + ' 💰' + P.gold + ' 📚' + learnedCount() + '字 🐉×' + prof.wishes + '</div></div>';
+      '<div class="name">' + esc(prof.name) + (prof.mode === "hero" ? " · Lv." + P.level : "") + "</div>" +
+      (prof.mode === "hero" ? '<div class="bar" title="经验"><span class="xp" style="width:' + Math.min(100, P.exp / P.expNeed * 100) + '%"></span></div>' : "") +
+      stats + "</div></div>";
   }
 
   /* ═══════════════ 特效 ═══════════════ */
@@ -672,12 +715,13 @@
   }
   function showQuiz(q, ctx) {
     curQ = q; curCtx = ctx;
-    var pr = ctx.pr, item = BYC[q.c];
+    var pr = ctx.pr;
     showScene(false); speedLines(true);
     var box = $("quiz");
     box.classList.remove("hidden");
     var main = "";
-    if (q.pic) main = '<div class="qpic">' + q.pic + "</div>";
+    if (q.mainHTML) main = q.mainHTML;
+    else if (q.pic) main = '<div class="qpic">' + q.pic + "</div>";
     else if (q.show) main = '<div class="qchar aura" id="qTarget">' + esc(q.show) + "</div>";
     else if (q.wordBlank) main = '<div class="qword" id="qTarget">' + q.wordBlank.split("").map(function (ch) { return ch === q.c ? '<span class="blank">' + ch + "</span>" : esc(ch); }).join("") + "</div>";
     else main = '<div class="qpic" id="qTarget">🔊</div>';
@@ -691,31 +735,40 @@
     q.options.forEach(function (key) {
       var label = q.optMap ? q.optMap[key] : key;
       var b = el("button", "btn opt " + (q.optCls || "hz"));
-      b.type = "button"; b.dataset.key = key; b.textContent = label;
+      b.type = "button"; b.dataset.key = key;
+      if (q.optHTML) b.innerHTML = label; else b.textContent = label;
       b.addEventListener("click", function (ev) { ev.preventDefault(); answer(b, key); });
       opts.appendChild(b);
     });
-    if (q.type === "pinyin") { $("hintBtn").innerHTML = "💡 提示"; }
+    if (q.type === "pinyin" || q.kind) { $("hintBtn").innerHTML = "💡 提示"; }
     $("sayBtn").onclick = function () { SFX.click(); if (q.type === "pinyin" && !q.done && !q.hinted) { showHint(); } else sayQ(q); };
     $("hintBtn").onclick = function () { SFX.click(); showHint(); };
     if (!TTS.ok) { $("sayBtn").classList.add("hidden"); }
+    if (q.kind === "eng" && q.speakEn && TTS.enOk) $("sayBtn").classList.remove("hidden");
     if (q.type === "listen" && !TTS.ok) showHint();
-    if (pr.settings.pinyin && q.type !== "pinyin") showHint(true);
+    if (pr.settings.pinyin && q.type !== "pinyin" && !q.kind) showHint(true);
     clearMenu();
     (ctx.menu || []).forEach(function (m) { addBtn(m[0], m[1], m[2]); });
     if (q.autoSpeak) setTimeout(function () { if (curQ === q) sayQ(q); }, 300);
     scrollTop();
   }
-  function sayQ(q) { TTS.say(q.speak); }
+  function sayQ(q) { if (q.speakEn && TTS.sayEn(q.speakEn)) return; TTS.say(q.speak); }
+  /** 答对 / 答错后朗读的内容 */
+  function sayAnswer(q) {
+    if (q.kind === "eng") { if (!TTS.sayEn(q.item[0])) TTS.say(q.sayAnswer); return; }
+    if (q.kind) return TTS.say(q.sayAnswer);
+    TTS.say(q.type === "fill" ? q.word.w : charSpeech(q.c));
+  }
   function showHint(silent) {
     var q = curQ; if (!q) return;
     q.hinted = true;
     var line = $("hintLine"); if (!line) return;
     var c = q.c;
+    if (q.kind) { line.innerHTML = q.hintHTML; if (!silent) sayAnswer(q); return; }
     if (q.type === "pinyin") line.innerHTML = (BYC[c].pic ? BYC[c].pic + " " : "") + esc(BYC[c].ok ? BYC[c].en : "") + " · 听一听 👂";
     else if (q.word) line.innerHTML = '<span class="py">' + esc(q.word.py) + "</span> <small>" + esc(q.word.en) + "</small>";
     else line.innerHTML = charHint(c);
-    if (!silent) TTS.say(q.type === "fill" ? q.word.w : c);
+    if (!silent) sayAnswer(q);
   }
   function answer(b, key) {
     var q = curQ, ctx = curCtx;
@@ -725,16 +778,16 @@
       document.querySelectorAll("#opts .opt").forEach(function (x) { x.disabled = true; });
       b.disabled = false; b.classList.add("right");
       SFX.correct();
-      TTS.say(q.type === "fill" ? q.word.w : q.c);
+      sayAnswer(q);
       var line = $("hintLine");
-      if (line) line.innerHTML = (q.wrongs === 0 ? "✨ 太棒了！ " : "👍 对啦！ ") + charHint(q.c);
-      setTimeout(function () { if (ctx.onDone) ctx.onDone(q.wrongs === 0, b, q); }, q.wrongs === 0 ? 900 : 1300);
+      if (line) line.innerHTML = (q.wrongs === 0 ? "✨ 太棒了！ " : "👍 对啦！ ") + (q.kind ? q.hintHTML : charHint(q.c));
+      setTimeout(function () { if (ctx.onDone) ctx.onDone(q.wrongs === 0, b, q); }, q.wrongs === 0 ? 1300 : 1700);
     } else {
       q.wrongs++;
       b.disabled = true; b.classList.add("wrong");
       SFX.soft();
       showHint(true);
-      setTimeout(function () { if (curQ === q && !q.done) TTS.say(q.type === "fill" ? q.word.w : q.c); }, 350);
+      if (!q.kind) setTimeout(function () { if (curQ === q && !q.done) sayAnswer(q); }, 350);
       var left = Array.prototype.filter.call(document.querySelectorAll("#opts .opt"), function (x) { return !x.disabled; });
       if (q.wrongs >= 2 || ctx.pr.mode === "little") {
         left.forEach(function (x) { if (x.dataset.key === q.answerKey) x.classList.add("glow"); });
@@ -743,68 +796,19 @@
     }
   }
 
-  /* ═══════════════ RPG 数值 ═══════════════ */
-  function totalAtk() {
-    var a = P.atk;
-    SKILLS.forEach(function (s) { if (P.skills.indexOf(s.id) !== -1) a += s.atk || 0; });
-    Object.keys(P.gear).forEach(function (k) { var g = P.gear[k]; if (g) a += g.atk || 0; });
-    return a;
-  }
-  function totalDef() {
-    var d = P.def;
-    SKILLS.forEach(function (s) { if (P.skills.indexOf(s.id) !== -1) d += s.def || 0; });
-    Object.keys(P.gear).forEach(function (k) { var g = P.gear[k]; if (g) d += g.def || 0; });
-    return d;
-  }
+  /* ═══════════════ 经验与等级（只用来鼓励，没有战斗数值） ═══════════════ */
   function gainExp(pr, amount) {
     var p = pr.player, up = false;
     p.exp += amount;
-    while (p.exp >= p.expNeed) {
-      p.exp -= p.expNeed; p.level++; p.expNeed = expNeed(p.level);
-      p.maxHp += 8; p.hp = p.maxHp; p.atk += 2; p.def += 1; up = true;
-      SKILLS.forEach(function (s) {
-        if (p.level >= s.req && p.skills.indexOf(s.id) === -1) { p.skills.push(s.id); addLog("领悟武功：" + s.name, "win"); }
-      });
-    }
+    while (p.exp >= p.expNeed) { p.exp -= p.expNeed; p.level++; p.expNeed = expNeed(p.level); up = true; }
     if (up && pr.mode === "hero") { SFX.level(); toast("🎉 " + pr.name + " 升级 Lv." + p.level + "！"); addLog("升级！Lv." + p.level, "win"); }
-  }
-  function hasQuestDone(id) { return P.questsDoneIds.indexOf(id) !== -1; }
-  function evaluateQuest(id) { try { return !!QUEST_CHECKERS[id](P); } catch (e) { return false; } }
-  function isQuestReady(q) { return !!prof && evaluateQuest(q.id) && !hasQuestDone(q.id); }
-  function getLoc(id) { return LOCATIONS.filter(function (l) { return l.id === id; })[0] || LOCATIONS[0]; }
-  function isLocationUnlocked(loc) {
-    var u = loc.unlock || {};
-    if (u.level && P.level < u.level) return false;
-    if (u.quest && !hasQuestDone(u.quest)) return false;
-    if (u.hanzi && learnedCount() < u.hanzi) return false;
-    return true;
-  }
-  function unlockReason(loc) {
-    var u = loc.unlock || {}, parts = [];
-    if (u.level && P.level < u.level) parts.push("需要 " + u.level + " 级（现在 " + P.level + " 级）");
-    if (u.quest && !hasQuestDone(u.quest)) {
-      var q = QUESTS.filter(function (x) { return x.id === u.quest; })[0];
-      parts.push(evaluateQuest(u.quest) ? "「" + q.name + "」已完成，去 📜任务 领奖励" : "先完成任务「" + q.name + "」");
-    }
-    if (u.hanzi && learnedCount() < u.hanzi) parts.push("学会 " + u.hanzi + " 个字（现在 " + learnedCount() + "）");
-    return parts.join("，");
-  }
-  function claimQuest(q) {
-    if (!isQuestReady(q)) { toast("还没完成哦"); return; }
-    P.questsDoneIds.push(q.id);
-    gainExp(prof, q.reward.exp || 0);
-    P.gold += q.reward.gold || 0;
-    addLog("✅ 领取「" + q.name + "」+" + q.reward.exp + "经验 💰" + q.reward.gold, "win");
-    toast("🎉 已领取：" + q.name);
-    confetti(16);
-    saveStore();
   }
 
   /* ═══════════════ 选人页（标题） ═══════════════ */
   var MAX_PROFILES = 4;
   function renderTitle() {
     screen = "title"; useProfile(null);
-    hideQuiz(); showScene(true); showNav(false); renderHUD(); closeOverlay();
+    hideQuiz(); showScene(true); renderHUD(); closeOverlay();
     $("logo").classList.remove("hidden");
     var none = !store.profiles.length;
     setStory(riderHTML("goku", "krillin") + '<div style="text-align:center">' +
@@ -840,8 +844,8 @@
 
   /** 旧版存档导入：选一位侠客模式玩家，或新建一位再导入 */
   function chooseImportTarget(ls) {
-    screen = "import"; hideQuiz(); showScene(true); showNav(false); clearMenu();
-    setStory("📥 把旧版存档 " + ls.slot + "（Lv." + (ls.player.level || 1) + "）的等级、装备和学过的字导入给谁？\n<small>旧存档本身不会被删除。</small>");
+    screen = "import"; hideQuiz(); showScene(true); clearMenu();
+    setStory("📥 把旧版存档 " + ls.slot + "（Lv." + (ls.player.level || 1) + "）的等级和学过的字导入给谁？\n<small>旧存档本身不会被删除。</small>");
     var finish = function (pr) {
       importLegacy(ls, pr);
       store.legacySlotsDone = (store.legacySlotsDone || []).concat([ls.slot]);
@@ -860,7 +864,7 @@
     opts = opts || {};
     var editing = !!pr;
     var d = { name: pr ? pr.name : "", mode: pr ? pr.mode : (opts.mode || "hero"), avatar: pr ? pr.avatar : AVATARS[store.profiles.length % 2] };
-    screen = "profileForm"; hideQuiz(); showScene(true); showNav(false); renderHUD(); closeOverlay();
+    screen = "profileForm"; hideQuiz(); showScene(true); renderHUD(); closeOverlay();
     $("logo").classList.add("hidden");
     setStory('<div class="big">' + (editing ? "✏️ 修改玩家" : "➕ 新玩家 · New player") + "</div>");
     clearMenu();
@@ -919,37 +923,43 @@
   function goHome() { if (!prof) return renderTitle(); if (prof.mode === "little") renderLittleHub(); else renderHub(); }
 
   /* ═══════════════ 侠客模式主页 ═══════════════ */
+  function placeHTML(pr) {
+    var pl = currentPlace(pr);
+    return '<div class="place"><span class="pcoach">' + portraitHTML(pl.coach, 64) + '</span><div><div class="big">' + pl.emoji + " " + esc(pl.name) + "</div>" +
+      esc(CAST[pl.coach].name) + "：「" + esc(pl.line) + "」</div></div>";
+  }
   function renderHub() {
-    screen = "hub"; battle = null; duo = null;
-    hideQuiz(); showScene(true); showNav(true); setNavActive("hub"); renderHUD();
+    screen = "hub"; duo = null; story = null;
+    hideQuiz(); showScene(true); renderHUD();
     $("logo").classList.add("hidden");
-    var loc = getLoc(P.location);
     var list = unlockedChars(prof);
     var dueN = list.filter(function (c) { var r = prof.srs[c]; return r && r.seen && r.due <= now(); }).length;
-    setStory(riderHTML(prof.avatar) + '<div class="big">' + loc.emoji + " " + esc(loc.name) + "</div>" + esc(loc.desc) +
+    setStory(riderHTML(prof.avatar) + placeHTML(prof) +
       "\n📚 第 " + (prof.stage + 1) + " 阶 · 已解锁 " + list.length + " 字" + (dueN ? " · 🔁 " + dueN + " 个字该复习了" : ""));
     clearMenu();
     addBtn(ballSVG(7, 34) + " 修炼一关：集齐 7 颗龙珠", function () { startSession(); }, { cls: "primary" });
     addBtn("📖 龙珠故事 · " + (storyProgress(prof) >= STORY.length ? "全部通关 🏆" : esc(STORY[storyProgress(prof)].title)), renderStoryMap, { cls: "yellow" });
-    addBtn("🏮 探索「" + esc(loc.name) + "」", renderLocation, { cls: "blue" });
-    addBtn("🤝 双人模式", chooseDuo, { cls: "small" });
-    if (QUESTS.some(isQuestReady)) addBtn("🎁 有任务奖励可以领！", renderQuests, { cls: "yellow small" });
+    var row = el("div", "row");
+    row.appendChild(btn("🔤 字卡本", renderBook, { cls: "blue" }));
+    row.appendChild(btn("🌟 贴纸", renderStickers, { cls: "blue" }));
+    $("menu").appendChild(row);
+    if (store.profiles.length >= 2) addBtn("🤝 双人模式", chooseDuo, { cls: "small" });
     scrollTop();
   }
 
   /* ═══════════════ 启蒙模式主页（几乎不用识字） ═══════════════ */
   function renderLittleHub() {
-    screen = "littleHub"; battle = null; duo = null;
-    hideQuiz(); showScene(true); showNav(false); renderHUD();
+    screen = "littleHub"; duo = null; story = null;
+    hideQuiz(); showScene(true); renderHUD();
     $("logo").classList.add("hidden");
     setStory(riderHTML(prof.avatar) + '<div style="text-align:center" class="big">' + esc(prof.name) + " 🐉×" + prof.wishes + "</div>");
     clearMenu();
     var go = addBtn('<span style="font-size:2.4rem">▶️</span> ' + ballSVG(1, 40) + ballSVG(4, 40) + ballSVG(7, 40), function () { startSession(); }, { cls: "primary" });
     go.style.minHeight = "110px";
     go.setAttribute("aria-label", "开始");
-    var row = el("div", "row");
     var sb = addBtn('<span style="font-size:2.2rem">📖</span> ' + portraitHTML("bulma", 54) + portraitHTML("roshi", 54) + portraitHTML("tien", 54), renderStoryMap, { cls: "yellow" });
     sb.setAttribute("aria-label", "龙珠故事");
+    var row = el("div", "row");
     row.appendChild(btn('<span style="font-size:2rem">🔤</span>', renderBook, { cls: "blue" }));
     row.appendChild(btn('<span style="font-size:2rem">🌟</span>', renderStickers, { cls: "yellow" }));
     $("menu").appendChild(row);
@@ -985,18 +995,27 @@
     for (var i = 1; i <= SESSION_LEN; i++) s += '<span id="slot' + i + '">' + ballSVG(i, 38, i <= session.balls ? "" : "empty") + "</span>";
     return s + "</div>";
   }
+  /** 7 题里换掉 1–2 题为数学/英语（优先换复习字，第一题不换） */
+  function withExtras(queue) {
+    var seen = function (i) { var r = prof.srs[queue[i].c]; return !!(r && r.seen); };
+    var idx = queue.map(function (x, i) { return i; }).filter(function (i) { return i > 0; });
+    var slots = shuffle(idx.filter(seen)).concat(shuffle(idx.filter(function (i) { return !seen(i); })));
+    var k = Math.random() < 0.5 ? EXTRA_PER_SESSION : EXTRA_PER_SESSION - 1;
+    slots.slice(0, k).forEach(function (i) { queue[i] = { extra: nextExtraKind(), retry: false }; });
+    return queue;
+  }
   function startSession() {
     session = {
-      pr: prof, queue: pickSessionChars(prof, SESSION_LEN).map(function (c) { return { c: c, retry: false }; }),
+      pr: prof, queue: withExtras(pickSessionChars(prof, SESSION_LEN).map(function (c) { return { c: c, retry: false }; })),
       idx: 0, balls: 0, first: 0, missed: [], introduced: {}, newChars: []
     };
-    screen = "session"; showNav(false);
-    nextInSession();
+    screen = "session";     nextInSession();
   }
   function nextInSession() {
     if (!session) return goHome();
     if (session.idx >= session.queue.length) return endSession();
     var item = session.queue[session.idx], pr = session.pr, c = item.c;
+    if (item.extra) return askInSession(item);
     var r = rec(c, pr);
     if (!r.seen && !session.introduced[c]) { session.introduced[c] = 1; session.newChars.push(c); return showIntro(c, function () { askInSession(item); }); }
     askInSession(item);
@@ -1004,12 +1023,15 @@
   function sessionMenu() { return [["⏸ 休息一下（回主页）", function () { saveStore(); session = null; goHome(); }, { cls: "small" }]]; }
   function askInSession(item) {
     var pr = session.pr;
-    var q = makeQuestion(pr, item.c);
+    var q = item.extra ? makeExtra(pr, item.extra) : makeQuestion(pr, item.c);
+    var tag = item.retry ? "🔁 再练一次" : "第 " + Math.min(SESSION_LEN, session.balls + 1) + " 颗龙珠";
+    if (item.extra) tag = (item.extra === "math" ? "🔢 数学 · " : "🔤 英语 · ") + tag;
     showQuiz(q, {
-      pr: pr, tag: item.retry ? "🔁 再练一次" : "第 " + Math.min(SESSION_LEN, session.balls + 1) + " 颗龙珠", header: trackerHTML(), menu: sessionMenu(),
+      pr: pr, tag: tag, header: trackerHTML(), menu: sessionMenu(),
       onDone: function (first, b) {
-        recordResult(pr, item.c, first);
+        if (item.extra) recordExtra(pr, item.extra, first); else recordResult(pr, item.c, first);
         if (first) { session.first++; gainExp(pr, 8 + Math.min(10, pr.player.level)); }
+        else if (item.extra) gainExp(pr, 3);
         else {
           gainExp(pr, 3);
           if (session.missed.indexOf(item.c) === -1) session.missed.push(item.c);
@@ -1029,21 +1051,40 @@
       }
     });
   }
+  /** 新字卡：大字 + 拼音/图 + 2–3 个组词（CC-CEDICT 核对过、读音一致），逐个读出来 */
+  function introWords(c) { return (BYC[c].w || []).slice(0, 3); }
+  function introSpeech(c, little) {
+    var ws = introWords(c);
+    return charSpeech(c).concat(little ? [] : ws.map(function (w) { return w.w; }));
+  }
   function showIntro(c, then) {
-    var it = BYC[c], little = session.pr.mode === "little";
+    var it = BYC[c], little = session.pr.mode === "little", ws = introWords(c);
     showScene(false); speedLines(true);
     var box = $("quiz"); box.classList.remove("hidden");
-    var w = (!little && it.w && it.w[0]) ? '<div class="qen">组词：<b style="font-family:var(--hanzi);font-size:1.4rem">' + esc(it.w[0].w) + "</b> " + esc(it.w[0].py) + " · " + esc(it.w[0].en) + "</div>" : "";
+    var wl = (!little && ws.length) ? '<div class="introwords"><div class="qen">组词 · Words</div>' + ws.map(function (w, i) {
+      return '<button class="btn small wordchip" type="button" data-i="' + i + '"><b>' + esc(w.w) + "</b><small>" + esc(w.py) + " · " + esc(w.en) + "</small></button>";
+    }).join("") + "</div>" : "";
     box.innerHTML = trackerHTML() + '<div class="qbox newcard"><div class="newbadge">新字!</div><span class="qtag">认识新字 · New</span>' +
       (it.pic ? '<div class="qpic" style="font-size:4rem">' + it.pic + "</div>" : "") +
-      '<div class="qchar aura">' + esc(c) + '</div><div class="hintline">' + charHint(c) + "</div>" + w +
+      '<div class="qchar aura">' + esc(c) + '</div><div class="hintline">' + charHint(c) + "</div>" + wl +
       '<div class="tools"><button class="btn blue" type="button" id="sayBtn">🔊 再听一次</button></div></div>';
-    $("sayBtn").onclick = function () { SFX.click(); TTS.say(it.w && it.w[0] && !little ? c + "，" + it.w[0].w : c); };
+    $("sayBtn").onclick = function () { SFX.click(); TTS.say(introSpeech(c, little)); };
+    box.querySelectorAll(".wordchip").forEach(function (b) {
+      b.addEventListener("click", function () { SFX.click(); TTS.say(ws[+b.dataset.i].w); });
+    });
     clearMenu();
-    addBtn(little ? '<span style="font-size:2.2rem">👉</span>' : "我记住了！ 👉", then, { cls: "primary" });
+    var next = (!little && ws.length) ? function () { wordPractice(c, then); } : then;
+    addBtn(little ? '<span style="font-size:2.2rem">👉</span>' : "我记住了！ 👉", next, { cls: "primary" });
     sessionMenu().forEach(function (m) { addBtn(m[0], m[1], m[2]); });
-    setTimeout(function () { TTS.say(c); }, 300);
+    setTimeout(function () { TTS.say(introSpeech(c, little)); }, 300);
     scrollTop();
+  }
+  /** 组词小练习：「哪个词里有『大』？」（不计入复习记录，答错也没关系） */
+  function wordPractice(c, then) {
+    var q = makeQuestion(session.pr, c, "word");
+    q.speak = ["哪个词里有", c];
+    showQuiz(q, { pr: session.pr, tag: "🧩 组词练习", header: trackerHTML(), menu: sessionMenu(),
+      onDone: function () { setTimeout(then, 400); } });
   }
   function endSession() {
     var s = session, pr = s.pr;
@@ -1070,18 +1111,15 @@
       circle += '<span style="position:absolute;left:' + (130 + Math.cos(a) * 105 - 24) + "px;top:" + (130 + Math.sin(a) * 105 - 24) + 'px">' + ballSVG(i, 48) + "</span>";
     }
     circle += '</div><div class="dragon">🐉</div>';
-    var wishes = pr.mode === "little"
-      ? shuffle(STICKERS.filter(function (s) { return pr.stickers.indexOf(s) === -1; }).concat(STICKERS)).slice(0, 3).map(function (st) { return { label: '<span style="font-size:2.6rem">' + st + "</span>", fn: function () { pr.stickers.push(st); return "得到贴纸 " + st; } }; })
-      : [
-        { label: "💰 金币 +30", fn: function () { pr.player.gold += 30; return "💰 +30 金币"; } },
-        { label: "🎁 神秘装备", fn: function () { var pool = GEAR_TEMPLATES.filter(function (g) { return pr.player.inventory.concat(Object.values(pr.player.gear)).every(function (x) { return !x || x.id !== g.id; }); }); var g = Object.assign({}, pick(pool.length ? pool : GEAR_TEMPLATES)); pr.player.inventory.push(g); return "🎁 得到「" + g.name + "」（去🎒背包穿上）"; } },
-        { label: "🌟 贴纸 + 经验 20", fn: function () { var st = pick(STICKERS); pr.stickers.push(st); gainExp(pr, 20); return "🌟 贴纸 " + st + " + 20 经验"; } }
-      ];
+    // 许愿：从三张贴纸里挑一张（优先给还没有的）
+    var fresh = STICKERS.filter(function (x) { return pr.stickers.indexOf(x) === -1; });
+    var choices = shuffle(fresh).concat(shuffle(STICKERS)).filter(function (x, i, a) { return a.indexOf(x) === i; }).slice(0, 3);
+    var wishes = choices.map(function (st) { return { label: '<span style="font-size:2.6rem">' + st + "</span>", fn: function () { pr.stickers.push(st); gainExp(pr, 10); return "得到贴纸 " + st; } }; });
     o.innerHTML = '<div style="position:relative;width:260px;height:260px">' + circle + '</div><div class="wishtitle">神龙出现了！说出你的愿望吧！</div><div class="wishes" id="wishes"></div>';
     o.classList.remove("hidden");
     SFX.win(); TTS.say("七颗龙珠集齐了！神龙出现了！说出你的愿望吧！");
     var box = $("wishes");
-    if (pr.mode === "little") box.style.gridTemplateColumns = "1fr 1fr 1fr";
+    box.style.gridTemplateColumns = "1fr 1fr 1fr";
     wishes.forEach(function (w) {
       box.appendChild(btn(w.label, function () {
         var msg = w.fn();
@@ -1095,7 +1133,7 @@
   function showSummary(s) {
     var pr = s.pr;
     screen = "summary";
-    hideQuiz(); showScene(true); renderHUD(); showNav(pr.mode === "hero"); setNavActive("");
+    hideQuiz(); showScene(true); renderHUD();
     var stars = s.first >= 6 ? "⭐⭐⭐" : s.first >= 4 ? "⭐⭐" : "⭐";
     var html = '<div class="big">' + stars + " 这一关完成啦！</div>一次就答对：" + s.first + " / " + SESSION_LEN;
     if (s.newChars.length) html += "\n🆕 新学的字：" + s.newChars.join(" ");
@@ -1105,13 +1143,12 @@
     setStory(html);
     clearMenu();
     addBtn("⚡ 再来一关", startSession, { cls: "primary" });
-    addBtn(pr.mode === "little" ? "🏠" : "🏯 回主页", goHome, { cls: "blue" });
+    addBtn(pr.mode === "little" ? "🏠" : "🏠 回主页", goHome, { cls: "blue" });
     if (s.advanced) { confetti(30); SFX.level(); }
     scrollTop();
   }
 
-  /* ═══════════════ 战斗（答对出招 · 答错可重试） ═══════════════ */
-  var battle = null;
+  /* ═══════════════ 对战画面（故事比赛 / 双人共用） ═══════════════ */
   var lastPicked = null;
   function pickOneChar(pr) {
     var list = unlockedChars(pr), t = now();
@@ -1126,76 +1163,16 @@
     return c;
   }
 
-  function startBattle(target, isNpc) {
-    battle = { m: Object.assign({ def: 0 }, target), hp: target.hp, isNpc: isNpc };
-    screen = "battle"; showNav(false);
-    addLog("⚔️ 遭遇 " + target.emoji + target.name + "！", "lose");
-    battleTurn();
-  }
   function arenaHTML(leftAva, leftName, leftPct, foe, foePct) {
     return '<div class="panel arena"><div class="fighter"><span class="em aura" id="meEm">' + leftAva + '</span><div class="nm">' + esc(leftName) + '</div><div class="bar"><span class="hp" style="width:' + leftPct + '%"></span></div></div>' +
       '<div class="vs">VS</div><div class="fighter"><span class="em" id="foeEm">' + (foe.html || esc(foe.emoji)) + '</span><div class="nm">' + esc(foe.name) + '</div><div class="bar"><span class="hp" style="width:' + foePct + '%"></span></div></div></div>';
   }
-  function battleTurn() {
-    if (!battle) return goHome();
-    renderHUD();
-    var m = battle.m;
-    var c = pickOneChar(prof);
-    var q = makeQuestion(prof, c);
-    showQuiz(q, {
-      pr: prof, tag: "⚔️ 答对就出招", header: arenaHTML(avatarHTML(prof.avatar, 72), prof.name, P.hp / P.maxHp * 100, m, Math.max(0, battle.hp / m.hp * 100)),
-      menu: [["🏃 撤退", function () { battle = null; renderLocation(); }, { cls: "small" }]],
-      onWrong: function (qq) {
-        if (qq.wrongs !== 1) return;             // 每题最多被打一次
-        var dmg = Math.max(1, Math.round((m.atk - totalDef()) * 0.6) + Math.floor(Math.random() * 2));
-        P.hp -= dmg;
-        var me = $("meEm"); if (me) { me.classList.remove("hit"); void me.offsetWidth; me.classList.add("hit"); }
-        addLog(m.name + " 趁机打中你 -" + dmg, "lose");
-        if (P.hp <= 0) {
-          P.hp = P.maxHp; battle = null; saveStore();
-          setTimeout(function () {
-            toast("👴 师父把你救回来了，休息好了再来！");
-            P.location = "village"; renderLocation();
-          }, 700);
-        }
-        renderHUD();
-      },
-      onDone: function (first) {
-        recordResult(prof, c, first);
-        var dmg = Math.max(2, totalAtk() - (m.def || 0) + Math.floor(Math.random() * 4));
-        if (!first) dmg = Math.ceil(dmg / 2);
-        fxBlast($("meEm"), $("foeEm"));
-        battle.hp -= dmg;
-        addLog("💥 气功波！造成 " + dmg + " 伤害", "win");
-        gainExp(prof, first ? 5 : 2);
-        saveStore();
-        setTimeout(function () { if (!battle) return; if (battle.hp <= 0) battleWin(); else battleTurn(); }, 700);
-      }
-    });
-  }
-  function battleWin() {
-    var m = battle.m;
-    SFX.win(); confetti(20);
-    gainExp(prof, m.exp); P.gold += m.gold; P.battlesWon++;
-    addLog("🎉 打败 " + m.name + "！+" + m.exp + "经验 💰" + m.gold, "win");
-    if (m.qingcheng) { P.flags.beat_qingcheng = true; addLog("📜 去「任务」领青城四秀奖励", "win"); }
-    GEAR_TEMPLATES.forEach(function (g) {
-      if (g.drop && Math.random() < g.drop * (m.boss ? 1.8 : 1)) { P.inventory.push(Object.assign({}, g)); addLog("🎁 掉落 " + g.name, "win"); }
-    });
-    battle = null; saveStore(); screen = "battleWin"; showNav(true);
-    hideQuiz(); showScene(true); renderHUD();
-    setStory('<div class="big">🏆 胜利！</div>' + m.emoji + esc(m.name) + " 被你的气功波打败啦！");
-    clearMenu();
-    addBtn("继续探索", renderLocation, { cls: "primary" });
-  }
-
   /* ═══════════════ 双人：同心协力 ═══════════════ */
   var duo = null;
   function chooseDuo() {
     var ps = store.profiles;
     if (ps.length === 2) return startDuo(ps[0], ps[1]);
-    useProfile(null); hideQuiz(); showScene(true); showNav(false);
-    setStory("🤝 选两位小侠客一起打魔王：<br><small>Pick any two players.</small>");
+    useProfile(null); hideQuiz(); showScene(true);     setStory("🤝 选两位小侠客一起打魔王：<br><small>Pick any two players.</small>");
     clearMenu();
     var chosen = [];
     ps.forEach(function (pr) {
@@ -1211,7 +1188,7 @@
     var boss = pick(DUO_BOSSES);
     duo = { players: [a, b], turn: 0, boss: { name: boss.name, emoji: boss.emoji }, hp: 10, max: 10, turns: 0 };
     useProfile(a);
-    screen = "duo"; showNav(false); $("logo").classList.add("hidden");
+    screen = "duo"; $("logo").classList.add("hidden");
     TTS.say("同心协力，一起打败" + boss.name + "！");
     duoTurn();
   }
@@ -1219,8 +1196,8 @@
     if (!duo) return renderTitle();
     var pr = duo.players[duo.turn];
     useProfile(pr); renderHUD();
-    var c = pickOneChar(pr);
-    var q = makeQuestion(pr, c);
+    var q = maybeExtra(pr), c = q ? null : pickOneChar(pr);
+    if (!q) q = makeQuestion(pr, c);
     var other = duo.players[1 - duo.turn];
     var header = '<div class="turnbar" style="background:' + pr.color + '">轮到 ' + avatarHTML(pr.avatar, 40) + " " + esc(pr.name) + (AVATAR_INFO[pr.avatar] ? "（" + esc(AVATAR_INFO[pr.avatar].label) + "）" : "") + "！</div>" +
       arenaHTML('<span class="duoava cur">' + avatarHTML(pr.avatar, 66) + '</span><span class="duoava">' + avatarHTML(other.avatar, 50) + "</span>", "同心协力", 100, duo.boss, duo.hp / duo.max * 100);
@@ -1228,7 +1205,7 @@
       pr: pr, tag: "🤝 双人", header: header,
       menu: [["🏠 结束双人", function () { duo = null; renderTitle(); }, { cls: "small" }]],
       onDone: function (first) {
-        recordResult(pr, c, first);
+        if (q.kind) recordExtra(pr, q.kind, first); else recordResult(pr, c, first);
         gainExp(pr, first ? 6 : 2);
         var dmg = first ? 2 : 1;
         duo.hp = Math.max(0, duo.hp - dmg);
@@ -1297,17 +1274,6 @@
       return '<ellipse cx="50" cy="54" rx="31" ry="30" fill="#2b3d8f" stroke="#141414" stroke-width="2.5"/>' + headBase("#ffe0c4", "#3f9b48") +
         '<path d="M27 46 Q28 22 50 22 Q72 22 73 46 Q64 32 50 34 Q36 32 27 46Z" fill="#2b3d8f" stroke="#141414" stroke-width="2"/>' +
         '<path d="M36 24 Q50 16 64 24" fill="none" stroke="#e3262f" stroke-width="5" stroke-linecap="round"/>' + eyes(48) + smile(false);
-    },
-    chiaotzu: function () {
-      return headBase("#fbf6f2", "#3f9b48") +
-        '<path d="M30 34 Q50 12 70 34 Z" fill="#e3262f" stroke="#141414" stroke-width="2"/><circle cx="50" cy="18" r="4" fill="#ffd400" stroke="#141414" stroke-width="1.5"/>' +
-        '<circle cx="34" cy="56" r="6" fill="#ff5a6a" opacity=".85"/><circle cx="66" cy="56" r="6" fill="#ff5a6a" opacity=".85"/>' + eyes(46, true) + smile(false);
-    },
-    tien: function () {
-      return headBase("#f5c99a", "#3f9b48") +
-        '<ellipse cx="50" cy="33" rx="3.5" ry="5" fill="#141414"/><circle cx="51" cy="31.5" r="1.2" fill="#fff"/>' +
-        '<path d="M35 41 L46 43 M65 41 L54 43" stroke="#141414" stroke-width="2.6" stroke-linecap="round"/>' + eyes(49) +
-        '<path d="M44 60 L56 60" stroke="#141414" stroke-width="2.4" stroke-linecap="round"/>';
     }
   };
   var CAST = {
@@ -1318,7 +1284,7 @@
   };
   function portraitHTML(key, size) {
     size = size || 80;
-    if (key === "goku" || key === "krillin") return avatarSVG(key, size);
+    if (AVATAR_INFO[key]) return avatarSVG(key, size);
     if (PORTRAITS[key]) return '<svg class="avsvg" width="' + size + '" height="' + size + '" viewBox="0 0 100 100" role="img" aria-label="' + CAST[key].name + '">' + PORTRAITS[key]() + "</svg>";
     var c = CAST[key];
     return '<span class="avemo" style="font-size:' + Math.round(size * 0.8) + 'px">' + (c ? c.emoji : key) + "</span>";
@@ -1332,45 +1298,45 @@
         ["narr", "他们一起出发了！答对汉字，就能抓住河里的大鱼当午饭。"]],
       matches: [{ name: "河里的大鱼", emoji: "🐟", hp: 6 }],
       outro: [["goku", "抓到啦！好大的鱼！"], ["bulma", "龙珠雷达亮了！下一颗在大沙漠。"]],
-      reward: { exp: 30, gold: 10, sticker: "🔴" } },
+      reward: { exp: 30, sticker: "🔴" } },
     { title: "第二章 · 沙漠里的雅木查", icon: "🏜️", place: "大沙漠",
       intro: [["narr", "布尔玛和小悟空来到了热热的大沙漠。"], ["yamcha", "站住！我是沙漠里的雅木查！"],
         ["bulma", "他的动作好快呀……小悟空，加油！"], ["goku", "好，我们来比一比！"]],
       matches: [{ name: "雅木查", portrait: "yamcha", hp: 8 }],
       outro: [["yamcha", "你真厉害！我们交个朋友吧。"], ["narr", "雅木查也加入了找龙珠的队伍。"]],
-      reward: { exp: 40, gold: 15, sticker: "🏜️" } },
-    { title: "第三章 · 龟仙人的修行", icon: "🐢", place: "海边小岛",
-      intro: [["narr", "海边的小岛上有一座小房子，住着武术老师龟仙人。"], ["roshi", "想变强吗？每天要练功，也要认真读书！"],
+      reward: { exp: 40, sticker: "🏜️" } },
+    { title: "第三章 · 龟仙人的修行", icon: "🐢", place: "龟仙屋",
+      intro: [["narr", "海边的小岛上有一座小房子，叫龟仙屋，住着武术老师龟仙人。"], ["roshi", "想变强吗？每天要练功，也要认真读书！"],
         ["krillin", "我是小库林，我也来拜师！"], ["launch", "我是蓝琪，我给大家做饭～ 阿……阿嚏！"],
         ["narr", "蓝琪一打喷嚏就会变样子！快去练功吧：背着龟壳去送牛奶！"]],
       matches: [{ name: "送牛奶修行", emoji: "🥛", hp: 8 }],
       outro: [["roshi", "很好！你们都进步了。送你们一套练功服！"], ["launch", "吃饭啦！练完功要多吃一点哦。"], ["roshi", "去参加天下第一武道会吧！"]],
-      reward: { exp: 50, gold: 20, sticker: "🐢", gear: "gi" } },
+      reward: { exp: 50, sticker: "🐢" } },
     { title: "第四章 · 武道会预选赛", icon: "🏟️", place: "天下第一武道会",
       intro: [["narr", "天下第一武道会开始啦！好多高手都来了。"], ["roshi", "先打赢预选赛，才能进正式比赛。"],
         ["krillin", "小悟空，我们一起加油！"]],
       matches: [{ name: "大力士选手", emoji: "💪", hp: 6 }, { name: "蒙面选手", emoji: "🥷", hp: 6 }],
       outro: [["narr", "预选赛通过！可以进正式比赛了！"], ["krillin", "太好了，我们都进去了！"]],
-      reward: { exp: 60, gold: 25, sticker: "🏟️" } },
+      reward: { exp: 60, sticker: "🏟️" } },
     { title: "第五章 · 对手饺子", icon: "🥟", place: "武道会擂台",
       intro: [["chiaotzu", "我是饺子，我会用超能力哦！"], ["tien", "饺子，别输给他们。"],
         ["krillin", "饺子好厉害，我们要冷静！"]],
       matches: [{ name: "饺子", portrait: "chiaotzu", hp: 8 }],
       outro: [["chiaotzu", "你们真强……下次我还要比！"], ["narr", "下一场就是决赛了！"]],
-      reward: { exp: 70, gold: 30, sticker: "🥟" } },
+      reward: { exp: 70, sticker: "🥟" } },
     { title: "第六章 · 决赛：天津饭", icon: "🏆", place: "武道会决赛",
       intro: [["narr", "决赛到了！对手是有三只眼睛的天津饭。"], ["tien", "我练了很久很久，我不会输！"],
         ["goku", "我也会用尽全力！"], ["roshi", "记住：认真、冷静、不放弃！"]],
       matches: [{ name: "天津饭", portrait: "tien", hp: 10 }],
       outro: [["tien", "你赢了……原来练武不只是为了赢。"], ["goku", "我们做朋友吧！"], ["narr", "大家成了好朋友！早期篇完结，恭喜你！"]],
-      reward: { exp: 100, gold: 50, sticker: "🏆" } }
+      reward: { exp: 100, sticker: "🏆" } }
   ];
 
   var story = null;
   function storyProgress(pr) { return pr.story || 0; }
   function renderStoryMap() {
-    screen = "storyMap"; battle = null; story = null;
-    hideQuiz(); showScene(true); showNav(prof.mode === "hero"); setNavActive(""); renderHUD();
+    screen = "storyMap"; story = null;
+    hideQuiz(); showScene(true); renderHUD();
     $("logo").classList.add("hidden");
     var done = storyProgress(prof);
     setStory('<div class="big">📖 龙珠故事 · 早期篇</div>跟着小悟空、布尔玛、小库林和龟仙人去冒险，参加天下第一武道会！\n<small>故事会读出来；比赛靠答对汉字。</small>');
@@ -1380,13 +1346,13 @@
       var label = (i < done ? "✅ " : locked ? "🔒 " : "▶️ ") + ch.icon + " " + ch.title;
       addBtn(label, function () { playChapter(i); }, { cls: i === done ? "primary" : locked ? "" : "yellow", disabled: locked });
     });
-    addBtn(prof.mode === "little" ? "🏠" : "🏯 回主页", goHome, { cls: "blue small" });
+    addBtn(prof.mode === "little" ? "🏠" : "🏠 回主页", goHome, { cls: "blue small" });
     TTS.say("龙珠故事");
     scrollTop();
   }
   function playChapter(i) {
     story = { i: i, ch: STORY[i], phase: "intro", scene: 0, match: 0 };
-    screen = "story"; showNav(false);
+    screen = "story";
     storyStep();
   }
   function storyStep() {
@@ -1406,9 +1372,9 @@
       '<div class="say">' + esc(text) + "</div></div>");
     clearMenu();
     addBtn('<span style="font-size:1.8rem">👉</span> 继续', function () { story.scene++; storyStep(); }, { cls: "primary" });
-    addBtn("🔊 再听一次", function () { TTS.say(plainText(text), 0.85); }, { cls: "small blue" });
+    addBtn("🔊 再听一次", function () { TTS.say(plainText(text), 0.7); }, { cls: "small blue" });
     addBtn("⏸ 回故事目录", renderStoryMap, { cls: "small" });
-    setTimeout(function () { TTS.say(plainText(text), 0.85); }, 200);
+    setTimeout(function () { TTS.say(plainText(text), 0.7); }, 200);
     scrollTop();
   }
   function startStoryMatch() {
@@ -1420,14 +1386,14 @@
   function storyTurn() {
     if (!story) return;
     var f = story.foe, ch = story.ch;
-    var c = pickOneChar(prof);
-    var q = makeQuestion(prof, c);
+    var q = maybeExtra(prof), c = q ? null : pickOneChar(prof);
+    if (!q) q = makeQuestion(prof, c);
     var tag = ch.matches.length > 1 ? "第 " + (story.match + 1) + " 场 / " + ch.matches.length : "📖 " + ch.title.split(" · ")[0];
     showQuiz(q, {
       pr: prof, tag: tag, header: arenaHTML(avatarHTML(prof.avatar, 72), prof.name, 100, f, f.hp / f.max * 100),
       menu: [["⏸ 回故事目录", renderStoryMap, { cls: "small" }]],
       onDone: function (first) {
-        recordResult(prof, c, first);
+        if (q.kind) recordExtra(prof, q.kind, first); else recordResult(prof, c, first);
         gainExp(prof, first ? 6 : 2);
         f.hp = Math.max(0, f.hp - (first ? 2 : 1));
         fxBlast($("meEm"), $("foeEm"));
@@ -1450,126 +1416,27 @@
     var i = story.i, ch = story.ch, r = ch.reward, first = storyProgress(prof) <= i;
     if (first) {
       prof.story = i + 1;
-      gainExp(prof, r.exp); P.gold += r.gold; prof.stickers.push(r.sticker);
-      if (r.gear) { var g = GEAR_TEMPLATES.filter(function (x) { return x.id === r.gear; })[0]; if (g) P.inventory.push(Object.assign({}, g)); }
+      gainExp(prof, r.exp); prof.stickers.push(r.sticker);
     } else gainExp(prof, 10);
     maybeAdvanceStage(prof);
     saveStore(); story = null; screen = "storyDone";
     hideQuiz(); showScene(true); renderHUD(); confetti(36); SFX.level();
     var html = '<div class="big">🎉 ' + esc(ch.title) + " 完成！</div>";
-    html += first ? "奖励：+" + r.exp + " 经验 · 💰" + r.gold + " · 贴纸 " + r.sticker + (r.gear ? " · 🎁 橙色练功服（去🎒背包穿上）" : "") : "复习通关 +10 经验";
+    html += first ? "奖励：+" + r.exp + " 经验 · 贴纸 " + r.sticker : "复习通关 +10 经验";
     if (i + 1 >= STORY.length) html += "\n\n🏆 早期篇全部通关！你真是天下第一的小侠客！";
     setStory(html);
     TTS.say(ch.title.split(" · ")[1] + "，完成！");
     clearMenu();
     if (i + 1 < STORY.length) addBtn("▶️ 下一章：" + STORY[i + 1].title, function () { playChapter(i + 1); }, { cls: "primary" });
     addBtn("📖 故事目录", renderStoryMap, { cls: "blue" });
-    addBtn(prof.mode === "little" ? "🏠" : "🏯 回主页", goHome, { cls: "small" });
-  }
-
-  /* ═══════════════ 地图 / 地点 / 人物 ═══════════════ */
-  function baseScreen(name, nav) {
-    screen = name; battle = null;
-    hideQuiz(); showScene(true); showNav(true); setNavActive(nav || name); renderHUD();
-    $("logo").classList.add("hidden");
-    clearMenu(); scrollTop();
-  }
-  function renderMap() {
-    baseScreen("map");
-    setStory('<div class="big">🗺️ 江湖地图</div>点亮的地方可以去，灰色的还要努力哦。');
-    var groups = {};
-    LOCATIONS.forEach(function (l) { (groups[l.category] = groups[l.category] || []).push(l); });
-    Object.keys(groups).forEach(function (cat) {
-      $("menu").appendChild(el("div", "card-label", CATEGORY_LABEL[cat]));
-      groups[cat].forEach(function (loc) {
-        var here = P.location === loc.id ? " 📍" : "";
-        if (isLocationUnlocked(loc)) {
-          addBtn(loc.emoji + " " + esc(loc.name) + here, function () { P.location = loc.id; saveStore(); renderLocation(); }, { cls: P.location === loc.id ? "yellow" : "" });
-        } else {
-          $("menu").appendChild(el("div", "card locked", "<strong>🔒 " + loc.emoji + " " + esc(loc.name) + "</strong><small>" + esc(unlockReason(loc)) + "</small>"));
-        }
-      });
-    });
-  }
-  function charsAtLocation(id) {
-    return NOVEL_CHARS.filter(function (c) { return c.locations.indexOf(id) !== -1 && P.level >= (c.minLevel || 1); });
-  }
-  function renderLocation() {
-    baseScreen("location", "hub");
-    var loc = getLoc(P.location);
-    setStory('<div class="big">' + loc.emoji + " " + esc(loc.name) + "</div>" + esc(loc.desc));
-    addBtn(ballSVG(7, 30) + " 修炼一关（集龙珠）", startSession, { cls: "primary" });
-    if (loc.id === "village") {
-      addBtn("🐺 教训野狼", function () { startBattle(WILD_MONSTERS[0], false); }, { cls: "blue" });
-      VILLAGE_NPCS.forEach(function (npc) { addBtn(npc.emoji + " 和" + npc.name + "说话", function () { openNpc(npc, true); }); });
-    } else {
-      charsAtLocation(loc.id).forEach(function (c) { addBtn(c.emoji + " " + esc(c.name) + "（" + c.sect + "）", function () { openNpc(c, false); }); });
-      if (loc.id === "qingcheng") addBtn("⚔️ 随机挑战青城四秀", function () { var qc = NOVEL_CHARS.filter(function (c) { return c.qingcheng; }); startBattle(pick(qc), true); }, { cls: "blue" });
-      WILD_MONSTERS.forEach(function (w) { if (w.loc === loc.id) addBtn("⚔️ 遭遇" + w.emoji + w.name, function () { startBattle(w, false); }, { cls: "blue" }); });
-    }
-    addBtn("🗺️ 地图", renderMap, { cls: "small" });
-  }
-  function openNpc(npc, isVillage) {
-    baseScreen("npc", "hub");
-    setStory('<div class="big">' + npc.emoji + " " + esc(npc.name) + "</div>" + esc(npc.role || npc.sect || "") + "\n\n「" + esc(pick(npc.dialogues)) + "」");
-    addBtn("📖 请教汉字（修炼一关）", startSession, { cls: "primary" });
-    if (!isVillage && npc.hp) addBtn("⚔️ 切磋", function () { startBattle(npc, true); }, { cls: "danger" });
-    if (isVillage && npc.id === "teacher") addBtn("📜 看任务", renderQuests, { cls: "small" });
-    addBtn("离开", renderLocation, { cls: "small" });
-    // 修复：只有「对话类」任务才在说话时完成；青城四秀必须真的打赢
-    if (!isVillage && npc.questFlag && /^met_/.test(npc.questFlag) && !P.flags[npc.questFlag]) {
-      P.flags[npc.questFlag] = true; saveStore();
-      addLog("📜 任务进度更新，去「任务」领奖励", "win");
-      showNav(true);
-    }
-  }
-  function renderQuests() {
-    baseScreen("quests");
-    var ready = QUESTS.filter(isQuestReady).length;
-    setStory('<div class="big">📜 任务</div>' + (ready ? "🎁 有 " + ready + " 个奖励可以领！" : "继续修炼，完成任务吧。"));
-    QUESTS.forEach(function (q) {
-      var done = hasQuestDone(q.id), rd = isQuestReady(q);
-      $("menu").appendChild(el("div", "card" + (done ? " done" : rd ? " ready" : ""),
-        "<strong>" + q.emoji + " " + esc(q.name) + (done ? " ✅" : rd ? " 🔔" : "") + "</strong>" + esc(q.desc) +
-        "<br><small>" + (done ? "奖励已领取" : "奖励：+" + q.reward.exp + " 经验 · 💰" + q.reward.gold) + "</small>"));
-      if (rd) addBtn("✅ 领取奖励 · " + esc(q.name), function () { claimQuest(q); renderQuests(); }, { cls: "primary" });
-    });
-  }
-  function renderBag() {
-    baseScreen("bag");
-    var worn = Object.keys(P.gear).filter(function (k) { return P.gear[k]; }).map(function (k) { return SLOT_NAME[k] + "：" + P.gear[k].name; }).join("、") || "无";
-    setStory('<div class="big">🎒 背包</div>已装备：' + esc(worn) + "\n门派：" + esc(P.sect || "未入门") +
-      "\n武功：" + P.skills.map(function (id) { return SKILLS.filter(function (s) { return s.id === id; })[0].name; }).join("、") +
-      "\n贴纸：" + (prof.stickers.join(" ") || "还没有，召唤神龙可以得到！"));
-    P.inventory.forEach(function (g, i) {
-      addBtn("穿上 " + esc(g.name) + "（+" + (g.atk || 0) + "攻 +" + (g.def || 0) + "防）", function () {
-        if (P.gear[g.slot]) P.inventory.push(P.gear[g.slot]);
-        P.gear[g.slot] = g; P.inventory.splice(i, 1); toast("穿上 " + g.name); saveStore(); renderBag();
-      }, { cls: "small" });
-    });
-    Object.keys(P.gear).forEach(function (k) {
-      var g = P.gear[k];
-      if (g) addBtn("卸下 " + esc(g.name), function () { P.inventory.push(g); P.gear[k] = null; saveStore(); renderBag(); }, { cls: "small" });
-    });
-    if (!P.inventory.length) $("menu").appendChild(el("div", "card", "背包空空的，打败对手或召唤神龙能得到装备～"));
-    addBtn("🏛️ 拜入门派", renderSect, { cls: "blue" });
-  }
-  function renderSect() {
-    baseScreen("sect", "bag");
-    setStory("🏛️ 选择门派：");
-    SECTS.forEach(function (s) {
-      addBtn("加入「" + s + "」" + (P.sect === s ? " ✅" : ""), function () {
-        P.sect = s; toast("🏛️ " + s); saveStore(); renderBag();
-      });
-    });
-    addBtn("返回背包", renderBag, { cls: "small" });
+    addBtn(prof.mode === "little" ? "🏠" : "🏠 回主页", goHome, { cls: "small" });
   }
 
   /* ═══════════════ 字卡本 / 贴纸 ═══════════════ */
   function renderBook() {
     var little = prof.mode === "little";
-    if (little) { screen = "book"; hideQuiz(); showScene(true); showNav(false); renderHUD(); clearMenu(); scrollTop(); }
-    else baseScreen("book");
+    screen = "book"; hideQuiz(); showScene(true); renderHUD(); clearMenu(); scrollTop();
+    $("logo").classList.add("hidden");
     var list = unlockedChars(prof);
     setStory('<div class="big">📖 ' + (little ? "我的字" : "字卡本") + "</div>点一下字就能听读音。颜色越深越熟练：白=新 · 橙=要多练 · 黄=认识 · 绿=熟练 · 蓝=大师");
     var grid = el("div", "book");
@@ -1578,7 +1445,7 @@
       b.type = "button";
       b.innerHTML = esc(c) + (little && BYC[c].pic ? "<i>" + BYC[c].pic + "</i>" : (r && r.seen ? "<i>" + "★".repeat(Math.min(3, Math.ceil(r.b / 2))) + "</i>" : ""));
       b.addEventListener("click", function () {
-        TTS.say(c);
+        TTS.say(charSpeech(c));
         var it = BYC[c];
         var ws = (it.w || []).map(function (w) { return w.w + " " + w.py; }).join(" · ");
         setStory('<div style="text-align:center"><div class="qchar aura" style="font-size:5rem">' + esc(c) + '</div><div class="hintline">' + charHint(c) + "</div>" + (little ? "" : "<small>" + esc(ws) + "</small>") + "</div>");
@@ -1587,21 +1454,24 @@
       grid.appendChild(b);
     });
     $("menu").appendChild(grid);
-    if (little) addBtn("🏠", goHome, { cls: "blue" });
+    addBtn(little ? "🏠" : "🏠 回主页", goHome, { cls: "blue" });
   }
   function renderStickers() {
-    screen = "stickers"; hideQuiz(); showScene(true); showNav(false); renderHUD(); clearMenu();
+    screen = "stickers"; hideQuiz(); showScene(true); renderHUD(); clearMenu();
+    $("logo").classList.add("hidden");
     setStory('<div class="big">🌟 我的贴纸</div><div class="stickers" style="font-size:3rem">' + (prof.stickers.join(" ") || "集齐龙珠召唤神龙，就能得到贴纸！") + "</div>");
-    addBtn("🏠", goHome, { cls: "blue" });
+    addBtn(prof.mode === "little" ? "🏠" : "🏠 回主页", goHome, { cls: "blue" });
   }
 
   /* ═══════════════ 设置（家长用） ═══════════════ */
   function renderSettings() {
     if (!prof) return;
-    screen = "settings"; hideQuiz(); showScene(true); showNav(false); renderHUD(); clearMenu(); scrollTop();
+    screen = "settings"; hideQuiz(); showScene(true); renderHUD(); clearMenu(); scrollTop();
     setStory('<div class="big">⚙️ 设置 · ' + esc(prof.name) + "</div>中文语音：" + (TTS.ok ? "✅ " + esc(TTS.voice.name) : "❌ 本设备没有中文语音（会改用拼音/图片提示）") +
-      "\n已解锁 " + unlockedChars(prof).length + " 字 · 第 " + (prof.stage + 1) + " 阶 · 共修炼 " + prof.sessions + " 关");
-    addBtn("🔊 测试中文语音", function () { if (!TTS.say("你好，小侠客！")) toast("没有可用的中文语音"); }, { cls: "small" });
+      "\n英文语音：" + (TTS.enOk ? "✅ " + esc(TTS.enVoice.name) : "❌ 没有（英语题只显示文字）") +
+      "\n已解锁 " + unlockedChars(prof).length + " 字 · 第 " + (prof.stage + 1) + " 阶 · 共修炼 " + prof.sessions + " 关" +
+      "\n数学题答对 " + prof.extra.math + " 次 · 英语题答对 " + prof.extra.eng + " 次");
+    addBtn("🔊 测试中文语音", function () { if (!TTS.say(["你好，小侠客！"].concat(charSpeech("大")))) toast("没有可用的中文语音"); }, { cls: "small" });
     addBtn("拼音提示：" + (prof.settings.pinyin ? "总是显示 ✅" : "点 💡 才显示"), function () { prof.settings.pinyin = !prof.settings.pinyin; saveStore(); renderSettings(); }, { cls: "small" });
     addBtn("模式：" + (prof.mode === "little" ? "🍼 启蒙模式（看图听音）" : "⚔️ 侠客模式") + " → 切换", function () {
       if (!global.confirm("切换模式？两种模式的学习进度分开计算。")) return;
@@ -1623,10 +1493,10 @@
     TTS.init();
     $("homeBtn").onclick = function () {
       SFX.click();
-      if ((session || battle || duo || story) && !global.confirm("回到选人页？进度已自动保存。")) return;
-      session = null; battle = null; duo = null; story = null; saveStore(); renderTitle();
+      if ((session || duo || story) && !global.confirm("回到选人页？进度已自动保存。")) return;
+      session = null; duo = null; story = null; saveStore(); renderTitle();
     };
-    $("settingsBtn").onclick = function () { SFX.click(); if (session || battle || duo || story) { toast("先完成这一关再设置哦"); return; } renderSettings(); };
+    $("settingsBtn").onclick = function () { SFX.click(); if (session || duo || story) { toast("先完成这一关再设置哦"); return; } renderSettings(); };
     $("soundBtn").onclick = function () {
       soundOn = !soundOn; this.textContent = soundOn ? "🔊" : "🔇";
       if (soundOn) { initAudio(); SFX.click(); } else { try { global.speechSynthesis.cancel(); } catch (e) { /* */ } }
@@ -1634,20 +1504,14 @@
     var unlock = function () { initAudio(); if (TTS.ok) { try { var u = new global.SpeechSynthesisUtterance(""); global.speechSynthesis.speak(u); } catch (e) { /* */ } } };
     document.body.addEventListener("touchstart", unlock, { once: true, passive: true });
     document.body.addEventListener("click", unlock, { once: true });
-    document.querySelectorAll(".nav-btn").forEach(function (b) {
-      b.addEventListener("click", function () {
-        SFX.click();
-        var a = b.dataset.action;
-        if (a === "hub") renderHub(); else if (a === "map") renderMap(); else if (a === "quests") renderQuests();
-        else if (a === "bag") renderBag(); else if (a === "book") renderBook();
-      });
-    });
     renderTitle();
   }
   // 测试钩子（只读状态 + 少量操作，便于自动化测试）
   global.__xiaoke = {
-    state: function () { return { screen: screen, store: store, prof: prof && prof.id, q: curQ && { c: curQ.c, type: curQ.type, answerKey: curQ.answerKey, options: curQ.options }, session: session && { idx: session.idx, balls: session.balls, len: session.queue.length } }; },
+    state: function () { return { screen: screen, store: store, prof: prof && prof.id, q: curQ && { c: curQ.c, kind: curQ.kind || null, type: curQ.type, answerKey: curQ.answerKey, options: curQ.options, answer: curQ.answer, title: curQ.title, en: curQ.en, item: curQ.item || null }, session: session && { idx: session.idx, balls: session.balls, len: session.queue.length } }; },
     makeQuestion: function (mode, c, type) { var pr = newProfile("t", mode, "🧒", "#000"); return makeQuestion(pr, c, type); },
+    makeExtra: function (mode, kind, stage) { var pr = newProfile("t", mode, "🧒", "#000"); pr.stage = stage || 0; return makeExtra(pr, kind); },
+    english: ENGLISH, charSpeech: charSpeech,
     tts: TTS
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
