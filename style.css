@@ -228,3 +228,5 @@ button{font-family:inherit;color:inherit}
 .btn.wordchip small{font-size:.85rem;font-weight:700;color:#444}
 .place{display:flex;align-items:center;gap:10px;margin-top:6px;text-align:left}
 .place .pcoach{flex:0 0 auto}
+.bookword{font-size:1rem;margin:4px 0}
+.bookword b{font-family:var(--hanzi);font-size:1.4rem}

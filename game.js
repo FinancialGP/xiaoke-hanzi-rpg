@@ -162,7 +162,9 @@
     goku: { label: "小悟空", desc: "刺猬头 · 猴尾巴 · 如意棒" },
     krillin: { label: "小库林", desc: "小光头 · 额头六个点 · 爱笑" },
     tien: { label: "天津饭", desc: "光头 · 额头第三只眼 · 绿色上衣" },
-    chiaotzu: { label: "饺子", desc: "小个子 · 白白的脸 · 红脸蛋 · 小帽子" }
+    chiaotzu: { label: "饺子", desc: "小个子 · 白白的脸 · 红脸蛋 · 小帽子" },
+    roshi: { label: "龟仙人", desc: "光头老爷爷 · 白胡子 · 墨镜 · 龟壳 · 拐杖" },
+    yamcha: { label: "雅木查", desc: "长长的刺刺黑发 · 脸上的疤 · 橙色练功服" }
   };
   function chibiBody(top, trim) {
     // 练功服：上衣颜色 + 领口/腰带颜色
@@ -184,6 +186,21 @@
     return '<circle cx="28" cy="' + (cy + 4) + '" r="5" fill="' + skin + '" stroke="#141414" stroke-width="2"/><circle cx="72" cy="' + (cy + 4) + '" r="5" fill="' + skin + '" stroke="#141414" stroke-width="2"/>' +
       '<circle cx="50" cy="' + cy + '" r="' + r + '" fill="' + skin + '" stroke="#141414" stroke-width="2.5"/>' +
       '<ellipse cx="42" cy="' + (cy - 15) + '" rx="7" ry="3.5" fill="#fff" opacity=".6" transform="rotate(-20 42 ' + (cy - 15) + ')"/>';   // 光头高光
+  }
+  // 头像和故事人物共用的简笔部件
+  function headBase(skin, top) {
+    return '<path d="M24 100 Q24 76 50 74 Q76 76 76 100 Z" fill="' + top + '" stroke="#141414" stroke-width="2.5"/>' +
+      '<circle cx="27" cy="50" r="5" fill="' + skin + '" stroke="#141414" stroke-width="2"/><circle cx="73" cy="50" r="5" fill="' + skin + '" stroke="#141414" stroke-width="2"/>' +
+      '<circle cx="50" cy="48" r="23" fill="' + skin + '" stroke="#141414" stroke-width="2.5"/>';
+  }
+  function eyes(y, closed) {
+    if (closed) return '<path d="M36 ' + y + ' Q41 ' + (y - 4) + ' 46 ' + y + ' M54 ' + y + ' Q59 ' + (y - 4) + ' 64 ' + y + '" fill="none" stroke="#141414" stroke-width="2.5" stroke-linecap="round"/>';
+    return '<ellipse cx="41" cy="' + y + '" rx="3.6" ry="5" fill="#141414"/><ellipse cx="59" cy="' + y + '" rx="3.6" ry="5" fill="#141414"/>' +
+      '<circle cx="42.2" cy="' + (y - 2) + '" r="1.4" fill="#fff"/><circle cx="60.2" cy="' + (y - 2) + '" r="1.4" fill="#fff"/>';
+  }
+  function smile(big) {
+    return big ? '<path d="M41 58 Q50 68 59 58 Z" fill="#7a1010" stroke="#141414" stroke-width="2"/>'
+      : '<path d="M43 59 Q50 64 57 59" fill="none" stroke="#141414" stroke-width="2.4" stroke-linecap="round"/>';
   }
   var AVATAR_DRAW = {
     goku: function () {
@@ -229,10 +246,29 @@
         '<path d="M45 59 Q50 63 55 59" fill="none" stroke="#141414" stroke-width="2.3" stroke-linecap="round"/></g>';
     }
   };
+  AVATAR_DRAW.roshi = function () {
+    // 背上的龟壳 + 拐杖 + 光头 + 墨镜 + 长长的白胡子（故事里也用这个头像）
+    return '<circle cx="50" cy="80" r="26" fill="#3f9b48" stroke="#141414" stroke-width="2.5"/><path d="M36 74 L50 66 L64 74 L64 88 L50 96 L36 88Z" fill="none" stroke="#1d5e25" stroke-width="2"/>' +
+      '<path d="M86 30 Q92 24 88 18 Q83 14 80 20" fill="none" stroke="#8a4b1f" stroke-width="4.5" stroke-linecap="round"/><path d="M85 28 L80 99" stroke="#8a4b1f" stroke-width="4.5" stroke-linecap="round"/>' +
+      headBase("#f5c99a", "#ff8a00") +
+      '<path d="M30 58 Q32 92 50 96 Q68 92 70 58 Q60 66 50 64 Q40 66 30 58Z" fill="#fff" stroke="#141414" stroke-width="2"/>' +
+      '<circle cx="41" cy="47" r="7" fill="#141414"/><circle cx="59" cy="47" r="7" fill="#141414"/><path d="M48 47 L52 47" stroke="#141414" stroke-width="3"/>' +
+      '<ellipse cx="40" cy="32" rx="8" ry="3.5" fill="#fff" opacity=".6"/>' +
+      '<path d="M44 62 Q50 66 56 62" fill="none" stroke="#141414" stroke-width="2"/>';
+  };
+  AVATAR_DRAW.yamcha = function () {
+    // 长长的刺刺黑发 + 脸颊上的疤 + 橙色练功服（故事里也用这个头像）
+    return '<path d="M22 70 L20 40 Q24 18 50 18 Q78 18 80 40 L78 70 L70 60 L68 72 L60 62 L40 62 L32 72 L30 60 Z" fill="#141414"/>' +
+      chibiBody() +
+      '<circle cx="27" cy="50" r="5" fill="#f5c99a" stroke="#141414" stroke-width="2"/><circle cx="73" cy="50" r="5" fill="#f5c99a" stroke="#141414" stroke-width="2"/>' +
+      '<circle cx="50" cy="48" r="23" fill="#f5c99a" stroke="#141414" stroke-width="2.5"/>' +
+      '<path d="M28 44 L32 24 L40 34 L46 20 L54 32 L62 20 L66 34 L74 26 L72 44 L64 36 L56 40 L48 34 L40 40 L34 36Z" fill="#141414"/>' +
+      '<path d="M60 52 L68 58 M66 51 L61 60" stroke="#8a2b1f" stroke-width="2" stroke-linecap="round"/>' + eyes(47) + smile(false);
+  };
   function avatarSVG(kind, size) {
     return '<svg class="avsvg" width="' + size + '" height="' + size + '" viewBox="0 0 100 100" role="img" aria-label="' + AVATAR_INFO[kind].label + '">' + AVATAR_DRAW[kind]() + "</svg>";
   }
-  /** 头像：小悟空 / 小库林 / 天津饭 / 饺子 用原创 SVG，其余是 emoji */
+  /** 头像：小悟空 / 小库林 / 天津饭 / 饺子 / 龟仙人 / 雅木查 用原创 SVG，其余是 emoji */
   function avatarHTML(ava, size) {
     size = size || 48;
     if (AVATAR_INFO[ava]) return avatarSVG(ava, size);
@@ -262,7 +298,7 @@
   ];
 
   /* ═══════════════ 玩家档案（每人独立进度） ═══════════════ */
-  var AVATARS = ["goku", "krillin", "tien", "chiaotzu", "🧒", "👦", "👶", "🐵", "🐯", "🐲", "🦊", "🐼"];
+  var AVATARS = ["goku", "krillin", "tien", "chiaotzu", "roshi", "yamcha", "🧒", "👦", "👶", "🐵", "🐯", "🐲", "🦊", "🐼"];
   var COLORS = ["#ff8a00", "#1e5bd8", "#21a35b", "#c23bd4"];
 
   function defaultPlayer() { return { level: 1, exp: 0, expNeed: expNeed(1) }; }
@@ -711,7 +747,7 @@
   var curQ = null, curCtx = null;
   function charHint(c) {
     var it = BYC[c];
-    return '<span class="py">' + esc(it.py) + "</span>" + (it.pic ? " " + it.pic : "") + (it.ok ? ' <small>' + esc(it.en) + "</small>" : "");
+    return '<span class="py">' + esc(it.py) + "</span>" + (it.pic ? " " + it.pic : "") + (it.en ? ' <small class="cen">' + esc(it.en) + "</small>" : "");
   }
   function showQuiz(q, ctx) {
     curQ = q; curCtx = ctx;
@@ -1237,38 +1273,11 @@
 
   /* ═══════════════ 龙珠故事模式（早期篇 · 原创改写的儿童版小场景） ═══════════════ */
   // 人物头像：全部是原创的简笔 Q 版致敬画像（SVG），不是官方图
-  function headBase(skin, top) {
-    return '<path d="M24 100 Q24 76 50 74 Q76 76 76 100 Z" fill="' + top + '" stroke="#141414" stroke-width="2.5"/>' +
-      '<circle cx="27" cy="50" r="5" fill="' + skin + '" stroke="#141414" stroke-width="2"/><circle cx="73" cy="50" r="5" fill="' + skin + '" stroke="#141414" stroke-width="2"/>' +
-      '<circle cx="50" cy="48" r="23" fill="' + skin + '" stroke="#141414" stroke-width="2.5"/>';
-  }
-  function eyes(y, closed) {
-    if (closed) return '<path d="M36 ' + y + ' Q41 ' + (y - 4) + ' 46 ' + y + ' M54 ' + y + ' Q59 ' + (y - 4) + ' 64 ' + y + '" fill="none" stroke="#141414" stroke-width="2.5" stroke-linecap="round"/>';
-    return '<ellipse cx="41" cy="' + y + '" rx="3.6" ry="5" fill="#141414"/><ellipse cx="59" cy="' + y + '" rx="3.6" ry="5" fill="#141414"/>' +
-      '<circle cx="42.2" cy="' + (y - 2) + '" r="1.4" fill="#fff"/><circle cx="60.2" cy="' + (y - 2) + '" r="1.4" fill="#fff"/>';
-  }
-  function smile(big) {
-    return big ? '<path d="M41 58 Q50 68 59 58 Z" fill="#7a1010" stroke="#141414" stroke-width="2"/>'
-      : '<path d="M43 59 Q50 64 57 59" fill="none" stroke="#141414" stroke-width="2.4" stroke-linecap="round"/>';
-  }
   var PORTRAITS = {
     bulma: function () {
       return '<ellipse cx="50" cy="52" rx="32" ry="30" fill="#29b6c6" stroke="#141414" stroke-width="2.5"/>' + headBase("#ffe0c4", "#ff6fa8") +
         '<path d="M27 46 Q30 22 50 22 Q72 22 74 46 Q66 34 56 36 Q50 30 42 36 Q34 34 27 46Z" fill="#29b6c6" stroke="#141414" stroke-width="2"/>' +
         '<path d="M60 24 L72 16 L70 30 Z M60 24 L56 12 L68 18 Z" fill="#e3262f" stroke="#141414" stroke-width="1.5"/>' + eyes(48) + smile(true);
-    },
-    yamcha: function () {
-      return '<path d="M22 70 L20 40 Q24 18 50 18 Q78 18 80 40 L78 70 L70 60 L68 72 L60 62 L40 62 L32 72 L30 60 Z" fill="#141414"/>' + headBase("#f5c99a", "#3f9b48") +
-        '<path d="M28 44 L32 24 L40 34 L46 20 L54 32 L62 20 L66 34 L74 26 L72 44 L64 36 L56 40 L48 34 L40 40 L34 36Z" fill="#141414"/>' +
-        '<path d="M60 52 L68 58 M66 51 L61 60" stroke="#8a2b1f" stroke-width="2" stroke-linecap="round"/>' + eyes(47) + smile(false);
-    },
-    roshi: function () {
-      return '<circle cx="50" cy="80" r="26" fill="#3f9b48" stroke="#141414" stroke-width="2.5"/><path d="M36 74 L50 66 L64 74 L64 88 L50 96 L36 88Z" fill="none" stroke="#1d5e25" stroke-width="2"/>' +
-        headBase("#f5c99a", "#ff8a00") +
-        '<path d="M30 58 Q32 92 50 96 Q68 92 70 58 Q60 66 50 64 Q40 66 30 58Z" fill="#fff" stroke="#141414" stroke-width="2"/>' +
-        '<circle cx="41" cy="47" r="7" fill="#141414"/><circle cx="59" cy="47" r="7" fill="#141414"/><path d="M48 47 L52 47" stroke="#141414" stroke-width="3"/>' +
-        '<ellipse cx="40" cy="32" rx="8" ry="3.5" fill="#fff" opacity=".6"/>' +
-        '<path d="M44 62 Q50 66 56 62" fill="none" stroke="#141414" stroke-width="2"/>';
     },
     launch: function () {
       return '<ellipse cx="50" cy="54" rx="31" ry="30" fill="#2b3d8f" stroke="#141414" stroke-width="2.5"/>' + headBase("#ffe0c4", "#3f9b48") +
@@ -1447,8 +1456,8 @@
       b.addEventListener("click", function () {
         TTS.say(charSpeech(c));
         var it = BYC[c];
-        var ws = (it.w || []).map(function (w) { return w.w + " " + w.py; }).join(" · ");
-        setStory('<div style="text-align:center"><div class="qchar aura" style="font-size:5rem">' + esc(c) + '</div><div class="hintline">' + charHint(c) + "</div>" + (little ? "" : "<small>" + esc(ws) + "</small>") + "</div>");
+        var ws = (it.w || []).map(function (w) { return '<div class="bookword"><b>' + esc(w.w) + "</b> " + esc(w.py) + " · " + esc(w.en) + "</div>"; }).join("");
+        setStory('<div style="text-align:center"><div class="qchar aura" style="font-size:5rem">' + esc(c) + '</div><div class="hintline">' + charHint(c) + "</div>" + (little ? "" : ws) + "</div>");
         scrollTop();
       });
       grid.appendChild(b);
