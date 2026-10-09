@@ -16,15 +16,15 @@ button{font-family:inherit;color:inherit}
 /* ---------- 背景 ---------- */
 #bg{position:fixed;inset:0;z-index:-2;background:linear-gradient(180deg,var(--sky1) 0%,#8fd3ff 45%,var(--sky2) 70%,#ffe9b8 100%);overflow:hidden}
 #bg .mountains{position:absolute;left:0;right:0;bottom:0;width:100%;height:34vh}
-.sky-cloud{position:absolute;background:#fff;border-radius:40px;height:26px;opacity:.9;box-shadow:24px -10px 0 4px #fff,52px 0 0 0 #fff;animation:drift 40s linear infinite}
+.sky-cloud{position:absolute;background:#fff;border-radius:40px;height:26px;opacity:.9;box-shadow:24px -10px 0 4px #fff,52px 0 0 0 #fff;animation:drift 200s linear infinite}
 .sky-cloud.c1{top:12%;left:-80px;width:70px}
-.sky-cloud.c2{top:26%;left:-160px;width:90px;animation-duration:55s;animation-delay:-20s}
-.sky-cloud.c3{top:6%;left:-120px;width:60px;animation-duration:70s;animation-delay:-35s}
+.sky-cloud.c2{top:26%;left:-160px;width:90px;animation-duration:275s;animation-delay:-100s}
+.sky-cloud.c3{top:6%;left:-120px;width:60px;animation-duration:350s;animation-delay:-175s}
 @keyframes drift{to{transform:translateX(130vw)}}
 .speedlines{position:fixed;inset:-20%;z-index:-1;pointer-events:none;
   background:repeating-conic-gradient(from 0deg at 50% 45%,rgba(255,255,255,0) 0deg 5deg,rgba(255,255,255,.75) 5deg 6deg,rgba(255,255,255,0) 6deg 11deg,rgba(20,20,20,.12) 11deg 11.6deg);
   -webkit-mask-image:radial-gradient(circle at 50% 45%,transparent 0 22%,#000 60%);mask-image:radial-gradient(circle at 50% 45%,transparent 0 22%,#000 60%);
-  animation:spin 30s linear infinite}
+  animation:spin 150s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ---------- 顶栏 ---------- */
@@ -85,12 +85,12 @@ button{font-family:inherit;color:inherit}
 .tracker{display:flex;justify-content:center;gap:6px;margin:4px 0 10px;background:rgba(255,255,255,.85);border:3px solid var(--ink);border-radius:30px;padding:6px 10px;box-shadow:3px 3px 0 var(--ink)}
 
 /* ---------- 筋斗云 + 角色 ---------- */
-.rider{position:relative;width:170px;height:120px;margin:0 auto;animation:bob 2.4s ease-in-out infinite}
+.rider{position:relative;width:170px;height:120px;margin:0 auto;animation:bob 12s ease-in-out infinite}
 .rider .ava{position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:3.4rem}
 .rider .cloudsvg{position:absolute;left:0;bottom:0;width:170px;height:70px}
 @keyframes bob{50%{transform:translateY(-10px)}}
 .aura{position:relative;z-index:0}
-.aura::before{content:"";position:absolute;inset:-14px;border-radius:50%;z-index:-1;background:radial-gradient(circle,rgba(255,240,120,.95) 0 35%,rgba(255,170,0,.55) 55%,transparent 72%);animation:auraPulse 1.2s ease-in-out infinite}
+.aura::before{content:"";position:absolute;inset:-14px;border-radius:50%;z-index:-1;background:radial-gradient(circle,rgba(255,240,120,.95) 0 35%,rgba(255,170,0,.55) 55%,transparent 72%);animation:auraPulse 6s ease-in-out infinite}
 @keyframes auraPulse{50%{transform:scale(1.15);opacity:.7}}
 
 /* ---------- 选人页 ---------- */
