@@ -1,0 +1,228 @@
+/* 小侠客汉字龙珠 v4 · 漫画风（橙/蓝/黄），所有图形为原创 CSS/SVG */
+:root{
+  --orange:#ff8a00; --orange2:#ff5e00; --blue:#1e5bd8; --blue2:#0d3a99; --yellow:#ffd400;
+  --ink:#141414; --paper:#fffaf0; --red:#e3262f; --green:#21a35b; --sky1:#4fb7ff; --sky2:#c9ecff;
+  --hanzi: "KaiTi","STKaiti","Kaiti SC","楷体","AR PL UKai CN","Noto Serif CJK SC",serif;
+  --ui: "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Arial Rounded MT Bold",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{font-family:var(--ui);color:var(--ink);background:var(--sky1);line-height:1.45;
+  padding:64px 10px calc(96px + env(safe-area-inset-bottom,0px));-webkit-text-size-adjust:100%;
+  overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+button{font-family:inherit;color:inherit}
+.hidden{display:none!important}
+
+/* ---------- 背景 ---------- */
+#bg{position:fixed;inset:0;z-index:-2;background:linear-gradient(180deg,var(--sky1) 0%,#8fd3ff 45%,var(--sky2) 70%,#ffe9b8 100%);overflow:hidden}
+#bg .mountains{position:absolute;left:0;right:0;bottom:0;width:100%;height:34vh}
+.sky-cloud{position:absolute;background:#fff;border-radius:40px;height:26px;opacity:.9;box-shadow:24px -10px 0 4px #fff,52px 0 0 0 #fff;animation:drift 40s linear infinite}
+.sky-cloud.c1{top:12%;left:-80px;width:70px}
+.sky-cloud.c2{top:26%;left:-160px;width:90px;animation-duration:55s;animation-delay:-20s}
+.sky-cloud.c3{top:6%;left:-120px;width:60px;animation-duration:70s;animation-delay:-35s}
+@keyframes drift{to{transform:translateX(130vw)}}
+.speedlines{position:fixed;inset:-20%;z-index:-1;pointer-events:none;
+  background:repeating-conic-gradient(from 0deg at 50% 45%,rgba(255,255,255,0) 0deg 5deg,rgba(255,255,255,.75) 5deg 6deg,rgba(255,255,255,0) 6deg 11deg,rgba(20,20,20,.12) 11deg 11.6deg);
+  -webkit-mask-image:radial-gradient(circle at 50% 45%,transparent 0 22%,#000 60%);mask-image:radial-gradient(circle at 50% 45%,transparent 0 22%,#000 60%);
+  animation:spin 30s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- 顶栏 ---------- */
+.topbar{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;gap:8px;padding:8px 10px;padding-top:calc(8px + env(safe-area-inset-top,0px));
+  background:linear-gradient(180deg,rgba(13,58,153,.95),rgba(30,91,216,.85));border-bottom:3px solid var(--ink)}
+.round-btn{width:48px;height:48px;border-radius:50%;border:3px solid var(--ink);background:var(--yellow);font-size:1.4rem;cursor:pointer;box-shadow:2px 3px 0 var(--ink);touch-action:manipulation;flex:none}
+.round-btn:active{transform:translate(2px,3px);box-shadow:none}
+.who{flex:1;color:#fff;font-weight:900;font-size:1.05rem;text-shadow:2px 2px 0 var(--ink);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
+/* ---------- 布局 ---------- */
+.wrap{max-width:640px;margin:0 auto}
+.logo{text-align:center;margin:4px 0 10px}
+.logo h1{font-size:1.9rem;font-weight:900;color:var(--yellow);letter-spacing:2px;
+  -webkit-text-stroke:2px var(--ink);text-shadow:3px 4px 0 var(--orange2),5px 7px 0 var(--ink);display:flex;align-items:center;justify-content:center;gap:8px}
+.logo p{display:inline-block;margin-top:6px;font-weight:800;font-size:.85rem;background:var(--orange);color:#fff;border:2px solid var(--ink);border-radius:20px;padding:2px 12px;box-shadow:2px 2px 0 var(--ink)}
+.ball-mini{display:inline-block;width:26px;height:26px;border-radius:50%;border:2px solid var(--ink);background:radial-gradient(circle at 35% 30%,#fff7c2 0 12%,#ffb52e 30%,#ff7a00 70%,#c84b00 100%);position:relative}
+.ball-mini::after{content:"★";position:absolute;inset:0;display:grid;place-items:center;color:var(--red);font-size:14px;-webkit-text-stroke:0}
+.panel{background:var(--paper);border:3px solid var(--ink);border-radius:18px;padding:12px 14px;margin-bottom:12px;box-shadow:5px 6px 0 var(--ink);position:relative}
+.story{font-size:1.08rem;font-weight:700;white-space:pre-wrap;min-height:2.5em}
+.story .big{font-size:1.4rem}
+.menu{display:flex;flex-direction:column;gap:10px}
+.log{margin-top:10px;font-size:.85rem;max-height:96px;overflow-y:auto;background:rgba(255,255,255,.75);border:2px solid var(--ink);border-radius:12px;padding:6px 10px}
+.log:empty{display:none}
+.log p{margin:1px 0}.log .win{color:var(--green)}.log .lose{color:#b0451f}
+
+/* ---------- 按钮（大、可触摸） ---------- */
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:62px;padding:12px 16px;font-size:1.15rem;font-weight:900;
+  background:#fff;border:3px solid var(--ink);border-radius:16px;box-shadow:3px 4px 0 var(--ink);cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;text-align:center;transition:transform .08s}
+.btn:active:not(:disabled){transform:translate(3px,4px);box-shadow:none}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:linear-gradient(180deg,#ffb23f,var(--orange));color:#fff;text-shadow:2px 2px 0 var(--ink);font-size:1.3rem;min-height:72px}
+.btn.blue{background:linear-gradient(180deg,#4f86ff,var(--blue));color:#fff;text-shadow:2px 2px 0 var(--ink)}
+.btn.yellow{background:var(--yellow)}
+.btn.danger{background:#ffd9d6}
+.btn.small{min-height:52px;font-size:1rem}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card{background:#fff;border:3px solid var(--ink);border-radius:14px;padding:10px 12px;box-shadow:3px 3px 0 var(--ink)}
+.card strong{display:block;color:var(--blue2);font-size:1.05rem}
+.card small{color:#555}
+.card.ready{background:#e9ffe9}.card.done{opacity:.6}.card.locked{opacity:.7;background:#eee}
+.card-label{font-weight:900;color:#fff;text-shadow:2px 2px 0 var(--ink);margin-top:4px}
+
+/* ---------- HUD ---------- */
+.hud{display:flex;gap:10px;align-items:center;background:#fff;border:3px solid var(--ink);border-radius:18px;padding:8px 12px;margin-bottom:12px;box-shadow:4px 5px 0 var(--ink)}
+.hud .ava{font-size:2.4rem;width:60px;height:60px;display:grid;place-items:center;border-radius:50%;border:3px solid var(--ink);position:relative;flex:none}
+.hud .info{flex:1;min-width:0;font-weight:800;font-size:.9rem}
+.hud .name{font-size:1.1rem;font-weight:900}
+.bar{height:12px;background:#ddd;border:2px solid var(--ink);border-radius:8px;overflow:hidden;margin:3px 0}
+.bar span{display:block;height:100%;transition:width .4s}
+.bar .hp{background:linear-gradient(90deg,#ff5a5a,#ff9a3c)}.bar .xp{background:linear-gradient(90deg,#3fa0ff,#7ad0ff)}
+.ballrow{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
+
+/* ---------- 龙珠 ---------- */
+.dball{display:inline-block;width:var(--s,40px);height:var(--s,40px);flex:none;filter:drop-shadow(2px 2px 0 rgba(0,0,0,.35))}
+.dball.empty{opacity:.25;filter:grayscale(1)}
+.dball.pop{animation:pop .6s cubic-bezier(.2,1.6,.4,1)}
+@keyframes pop{0%{transform:scale(0) rotate(-90deg)}100%{transform:scale(1) rotate(0)}}
+.tracker{display:flex;justify-content:center;gap:6px;margin:4px 0 10px;background:rgba(255,255,255,.85);border:3px solid var(--ink);border-radius:30px;padding:6px 10px;box-shadow:3px 3px 0 var(--ink)}
+
+/* ---------- 筋斗云 + 角色 ---------- */
+.rider{position:relative;width:170px;height:120px;margin:0 auto;animation:bob 2.4s ease-in-out infinite}
+.rider .ava{position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:3.4rem}
+.rider .cloudsvg{position:absolute;left:0;bottom:0;width:170px;height:70px}
+@keyframes bob{50%{transform:translateY(-10px)}}
+.aura{position:relative;z-index:0}
+.aura::before{content:"";position:absolute;inset:-14px;border-radius:50%;z-index:-1;background:radial-gradient(circle,rgba(255,240,120,.95) 0 35%,rgba(255,170,0,.55) 55%,transparent 72%);animation:auraPulse 1.2s ease-in-out infinite}
+@keyframes auraPulse{50%{transform:scale(1.15);opacity:.7}}
+
+/* ---------- 选人页 ---------- */
+.profiles{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pcard{border:3px solid var(--ink);border-radius:20px;background:#fff;padding:12px 8px;text-align:center;box-shadow:4px 5px 0 var(--ink);cursor:pointer;min-height:180px;touch-action:manipulation}
+.pcard:active{transform:translate(3px,4px);box-shadow:none}
+.pcard .ava{font-size:3.6rem;line-height:1.1}
+.pcard .pn{font-size:1.3rem;font-weight:900}
+.pcard .pm{display:inline-block;font-size:.8rem;font-weight:900;color:#fff;border-radius:10px;padding:1px 8px;border:2px solid var(--ink);margin:4px 0}
+.pcard small{display:block;font-weight:700;color:#444}
+
+/* ---------- 答题 ---------- */
+#quiz{margin-bottom:12px}
+.qbox{background:var(--paper);border:3px solid var(--ink);border-radius:20px;padding:12px;box-shadow:5px 6px 0 var(--ink);text-align:center;position:relative;overflow:hidden}
+.qtag{display:inline-block;font-weight:900;font-size:.85rem;color:#fff;background:var(--blue);border:2px solid var(--ink);border-radius:12px;padding:1px 10px}
+.qtitle{font-size:1.25rem;font-weight:900;margin:6px 0 2px}
+.qen{font-size:.9rem;color:#555;font-weight:700}
+.qchar{font-family:var(--hanzi);font-size:7rem;line-height:1.1;font-weight:700;color:var(--ink);margin:6px auto;display:inline-block;padding:0 18px}
+.qpic{font-size:6rem;line-height:1.15;margin:4px 0}
+.qword{font-family:var(--hanzi);font-size:4rem;font-weight:700;letter-spacing:6px}
+.qword .blank{display:inline-block;width:1em;border-bottom:6px solid var(--orange2);color:transparent}
+.hintline{min-height:1.6em;font-size:1.3rem;font-weight:900;color:var(--blue2)}
+.hintline .py{font-size:1.6rem;color:var(--orange2)}
+.tools{display:flex;gap:8px;justify-content:center;margin:6px 0}
+.tools .btn{width:auto;min-height:52px;font-size:1rem;padding:8px 14px}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+.opts.three{grid-template-columns:1fr 1fr 1fr}
+.opt{min-height:96px;font-size:1.3rem;padding:8px;border-radius:18px}
+.opt.hz{font-family:var(--hanzi);font-size:3.4rem;font-weight:700}
+.opt.emo{font-size:3.4rem}
+.opt.py{font-size:1.8rem}
+.opt.word{font-family:var(--hanzi);font-size:2.4rem}
+.opt.wrong{background:#ddd!important;animation:shake .4s}
+.opt.right{background:linear-gradient(180deg,#9dffb5,#3ccf74)!important;transform:scale(1.04)}
+.opt.glow{animation:glow 1s ease-in-out infinite;background:#fff6b0}
+@keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+@keyframes glow{50%{box-shadow:0 0 0 6px var(--yellow),3px 4px 0 var(--ink)}}
+.newcard{background:linear-gradient(180deg,#fff,#fff3c4)}
+.newbadge{position:absolute;top:8px;right:-34px;transform:rotate(35deg);background:var(--red);color:#fff;font-weight:900;padding:2px 40px;border:2px solid var(--ink)}
+.turnbar{font-weight:900;font-size:1.2rem;color:#fff;text-shadow:2px 2px 0 var(--ink);border:3px solid var(--ink);border-radius:16px;padding:6px 10px;margin-bottom:8px;text-align:center;box-shadow:3px 3px 0 var(--ink)}
+
+/* ---------- 战斗 ---------- */
+.arena{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.fighter{flex:1;text-align:center}
+.fighter .em{font-size:3.6rem;display:inline-block}
+.fighter .nm{font-weight:900}
+.vs{font-weight:900;font-size:1.6rem;color:var(--red);-webkit-text-stroke:1px var(--ink)}
+.hit{animation:hit .5s}
+@keyframes hit{20%{transform:translateX(10px) rotate(8deg);filter:brightness(2)}60%{transform:translateX(-6px)}}
+
+/* ---------- 特效层：气功波 ---------- */
+#fx{position:fixed;inset:0;pointer-events:none;z-index:80;overflow:hidden}
+.blast{position:absolute;height:34px;border-radius:20px;transform-origin:left center;
+  background:linear-gradient(90deg,rgba(80,160,255,0),#7fd0ff 20%,#fff 50%,#7fd0ff 80%);box-shadow:0 0 18px 8px rgba(80,170,255,.8),0 0 40px 18px rgba(255,255,255,.6);
+  animation:beam .55s ease-out forwards}
+@keyframes beam{0%{transform:scaleX(0);opacity:1}70%{transform:scaleX(1);opacity:1}100%{transform:scaleX(1);opacity:0}}
+.boom{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;background:radial-gradient(circle,#fff 0 25%,#ffe36b 40%,#ff8a00 65%,transparent 72%);animation:boom .6s ease-out forwards}
+@keyframes boom{0%{transform:scale(.3);opacity:1}100%{transform:scale(6);opacity:0}}
+.flyball{position:absolute;transition:all .7s cubic-bezier(.3,1.4,.5,1)}
+.confetti{position:absolute;top:-20px;font-size:1.6rem;animation:fall linear forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(540deg)}}
+
+/* ---------- 遮罩：召唤神龙 ---------- */
+#overlay{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;text-align:center;
+  background:radial-gradient(circle at 50% 40%,#2b3d7a 0%,#0b1030 70%);color:#fff;animation:fadein .5s}
+@keyframes fadein{from{opacity:0}}
+.ballcircle{position:relative;width:260px;height:260px;animation:spin 6s linear infinite}
+.ballcircle .dball{position:absolute;left:50%;top:50%;margin:-24px 0 0 -24px;filter:drop-shadow(0 0 12px #ffb000)}
+.dragon{font-size:8rem;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0);animation:rise 1.4s 1s forwards;filter:drop-shadow(0 0 24px #ffe066) drop-shadow(0 0 50px #ffb000)}
+@keyframes rise{to{transform:translate(-50%,-60%) scale(1)}}
+.wishtitle{font-size:1.6rem;font-weight:900;color:var(--yellow);-webkit-text-stroke:1px var(--ink);text-shadow:3px 3px 0 var(--orange2);margin:14px 0 8px}
+.wishes{display:grid;gap:10px;width:100%;max-width:420px;opacity:0;animation:wishIn .5s 2.3s forwards}
+@keyframes wishIn{from{opacity:0}to{opacity:1}}
+.wishes .btn{color:var(--ink)}
+.stickers{display:flex;flex-wrap:wrap;gap:6px;font-size:2rem;justify-content:center}
+
+/* ---------- 字卡本 ---------- */
+.book{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px}
+.hzcell{font-family:var(--hanzi);font-size:2.2rem;font-weight:700;height:72px;border:3px solid var(--ink);border-radius:12px;background:#fff;cursor:pointer;position:relative;box-shadow:2px 2px 0 var(--ink)}
+.hzcell i{position:absolute;right:3px;bottom:0;font-style:normal;font-size:.7rem;font-family:var(--ui)}
+.m0{background:#fff}.m1{background:#ffe7c2}.m2{background:#fff59a}.m3{background:#b9f3c6}.m4{background:#8be3ff}
+
+/* ---------- 底部导航 ---------- */
+.hub-nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:repeat(5,1fr);gap:6px;max-width:640px;margin:0 auto;
+  padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));background:linear-gradient(0deg,var(--blue2),var(--blue));border-top:3px solid var(--ink)}
+.nav-btn{position:relative;display:flex;flex-direction:column;align-items:center;min-height:64px;justify-content:center;font-weight:900;font-size:.85rem;color:#fff;background:rgba(255,255,255,.12);
+  border:2px solid var(--ink);border-radius:14px;cursor:pointer;touch-action:manipulation}
+.nav-btn .icon{font-size:1.6rem}
+.nav-btn.active{background:var(--yellow);color:var(--ink)}
+.badge{position:absolute;top:2px;right:6px;background:var(--red);color:#fff;border-radius:50%;width:20px;height:20px;font-style:normal;display:grid;place-items:center;border:2px solid var(--ink);font-size:.75rem}
+.toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);z-index:100;background:var(--yellow);border:3px solid var(--ink);border-radius:24px;padding:10px 20px;font-weight:900;box-shadow:3px 3px 0 var(--ink);animation:toast 2.2s forwards;white-space:nowrap;pointer-events:none}
+@keyframes toast{0%{opacity:0;transform:translate(-50%,14px)}12%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-14px)}}
+.tag-voice{font-size:.8rem;font-weight:800;color:#555}
+@media (min-width:700px){.qchar{font-size:9rem}.opt{min-height:110px}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01s!important}}
+
+/* ---------- 原创 Q 版头像（小悟空 / 小库林） ---------- */
+.avsvg{display:inline-block;vertical-align:middle;overflow:visible}
+.avemo{display:inline-block;line-height:1;vertical-align:middle}
+.hud .ava{overflow:hidden}
+.pcard .ava{height:100px;display:flex;align-items:center;justify-content:center}
+.pcard .avname{font-weight:900;color:var(--orange2);font-size:.95rem}
+.rider .ava{display:flex;gap:2px;top:-6px;white-space:nowrap;z-index:1}
+.rider .cloudsvg{z-index:2}
+.fighter .em{line-height:1}
+.duoava{display:inline-block;vertical-align:bottom}
+.duoava:not(.cur){opacity:.75}
+.trk-ava{display:inline-flex;align-items:center;margin-right:4px}
+.who .avsvg{background:#fff;border-radius:50%;border:2px solid var(--ink)}
+.turnbar .avsvg{background:#fff;border-radius:50%;border:2px solid var(--ink)}
+
+/* ---------- 故事模式 ---------- */
+.storyhead{font-weight:900;color:#fff;background:var(--blue);border:2px solid var(--ink);border-radius:12px;padding:2px 10px;display:inline-block;margin-bottom:8px;font-size:.9rem}
+.bubble{display:flex;gap:10px;align-items:center}
+.spk{text-align:center;flex:none;width:104px}
+.spk .avsvg,.spk .avemo{background:#fff3c4;border:3px solid var(--ink);border-radius:50%}
+.spkname{font-weight:900;color:var(--orange2)}
+.say{position:relative;flex:1;background:#fff;border:3px solid var(--ink);border-radius:18px;padding:12px 14px;font-size:1.35rem;font-weight:800;line-height:1.5;box-shadow:3px 3px 0 var(--ink)}
+.say::before{content:"";position:absolute;left:-14px;top:50%;margin-top:-10px;border:10px solid transparent;border-right:14px solid var(--ink);border-left:0}
+.fighter .em .avsvg{vertical-align:bottom}
+
+/* ── 新建 / 修改玩家表单 ── */
+.pcard.addcard{background:repeating-linear-gradient(45deg,#fff7e0,#fff7e0 10px,#ffefc2 10px,#ffefc2 20px);border-style:dashed}
+.pform{display:flex;flex-direction:column;gap:10px;background:#fffdf5;border:3px solid var(--ink);border-radius:20px;padding:14px;box-shadow:4px 5px 0 var(--ink)}
+.pflabel{font-size:1.25rem;font-weight:900}
+.pflabel small{color:#666;font-weight:700}
+.pfname{width:100%;box-sizing:border-box;font-size:1.6rem;font-weight:900;padding:14px 16px;border:3px solid var(--ink);border-radius:16px;background:#fff;font-family:inherit}
+.pfname:focus{outline:4px solid var(--yellow);outline-offset:2px}
+.choices{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn.choice{flex-direction:column;min-height:110px;gap:4px;font-size:1.2rem}
+.btn.choice small,.btn.avpick small{font-size:.8rem;font-weight:700;color:#444;text-shadow:none}
+.btn.choice.sel,.btn.avpick.sel{background:var(--yellow);outline:5px solid var(--orange);outline-offset:-2px}
+.avgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:10px}
+.btn.avpick{flex-direction:column;min-height:96px;padding:6px;gap:2px}
+.btn.avpick .avemo{font-size:44px}
