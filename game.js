@@ -870,6 +870,7 @@
     }
     $("menu").appendChild(grid);
     if (store.profiles.length >= 2) addBtn("🤝 同心协力 · 双人轮流打魔王", function () { chooseDuo(); }, { cls: "blue" });
+    addBtn("📥 导入存档（存档码 / 文件）", function () { renderImport(renderTitle); }, { cls: "small" });
     var done = store.legacySlotsDone || [];
     legacySlots().forEach(function (ls) {
       if (store.legacyDone || done.indexOf(ls.slot) !== -1) return;
@@ -1441,6 +1442,167 @@
     addBtn(prof.mode === "little" ? "🏠" : "🏠 回主页", goHome, { cls: "small" });
   }
 
+  /* ═══════════════ 存档 / 读档（导出存档码、导入、每人 3 个手动存档位） ═══════════════ */
+  var SAVE_PREFIX = "XKSAVE1:";
+  var SLOT_KEY = "xiaoke_v4_slots_";     // + 玩家 id → [存档1, 存档2, 存档3]
+  function b64encode(str) { return global.btoa(unescape(encodeURIComponent(str))); }
+  function b64decode(b64) { return decodeURIComponent(escape(global.atob(b64.replace(/\s+/g, "")))); }
+  function fmtTime(t) {
+    var d = new Date(t), p = function (n) { return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function savePayload(list) { return { app: "xiaoke-hanzi-dragonball", v: 1, at: now(), profiles: list.map(clone) }; }
+  function makeSaveCode(list) { return SAVE_PREFIX + b64encode(JSON.stringify(savePayload(list))); }
+
+  /** 读入存档码 / JSON 文件内容，返回校验过的玩家数组；格式不对就抛出错误 */
+  function parseSave(text) {
+    text = String(text || "").trim();
+    if (!text) throw new Error("存档是空的");
+    var obj = null;
+    if (text.indexOf(SAVE_PREFIX) === 0) text = text.slice(SAVE_PREFIX.length);
+    if (text.charAt(0) === "{") obj = JSON.parse(text);
+    else { try { obj = JSON.parse(b64decode(text)); } catch (e) { throw new Error("看不懂这个存档码"); } }
+    var list = obj && Array.isArray(obj.profiles) ? obj.profiles : (obj && obj.name && obj.srs ? [obj] : null);
+    if (!list || !list.length) throw new Error("存档里没有玩家");
+    return list.map(function (p) {
+      if (!p || typeof p.name !== "string" || !p.name.trim()) throw new Error("存档里的玩家没有名字");
+      if (p.mode !== "hero" && p.mode !== "little") throw new Error("存档里的模式不对");
+      if (p.srs && typeof p.srs !== "object") throw new Error("存档里的学习记录不对");
+      var pr = clone(p);
+      pr.name = pr.name.trim().slice(0, 12);
+      if (!AVATAR_INFO[pr.avatar] && AVATARS.indexOf(pr.avatar) === -1) pr.avatar = "goku";
+      if (!/^#[0-9a-f]{6}$/i.test(pr.color || "")) pr.color = COLORS[0];
+      Object.keys(pr.srs || {}).forEach(function (c) { if (!BYC[c]) delete pr.srs[c]; });
+      if (!pr.id) pr.id = "p" + now().toString(36) + Math.floor(Math.random() * 1e4);
+      normalizeProfile(pr);
+      return pr;
+    });
+  }
+  /** 把导入的玩家放进存档：同 id 或同名的会先问是否覆盖 */
+  function applyImport(list) {
+    var added = 0, replaced = 0, skipped = 0;
+    list.forEach(function (pr) {
+      var old = store.profiles.filter(function (p) { return p.id === pr.id || p.name === pr.name; })[0];
+      if (old) {
+        if (!global.confirm("要用导入的存档覆盖「" + old.name + "」现在的进度吗？\n（覆盖后不能恢复）")) { skipped++; return; }
+        pr.id = old.id;
+        store.profiles[store.profiles.indexOf(old)] = pr;
+        if (prof === old) useProfile(pr);
+        replaced++;
+      } else if (store.profiles.length < MAX_PROFILES) {
+        store.profiles.push(pr); added++;
+      } else { skipped++; }
+    });
+    saveStore();
+    return { added: added, replaced: replaced, skipped: skipped };
+  }
+
+  function copyText(text, ta) {
+    var fallback = function () {
+      try {
+        ta.removeAttribute("readonly"); ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+        var ok = document.execCommand("copy"); ta.setAttribute("readonly", ""); ta.blur();
+        toast(ok ? "📋 已复制" : "请长按文字框，选「全选 → 拷贝」");
+      } catch (e) { toast("请长按文字框，选「全选 → 拷贝」"); }
+    };
+    if (global.navigator.clipboard && global.isSecureContext) {
+      global.navigator.clipboard.writeText(text).then(function () { toast("📋 已复制"); }, fallback);
+    } else fallback();
+  }
+  function downloadText(text, name, type) {
+    try {
+      var blob = new Blob([text], { type: type }), url = URL.createObjectURL(blob);
+      var a = document.createElement("a"); a.href = url; a.download = name; a.rel = "noopener";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+      toast("⬇️ 已下载 " + name);
+    } catch (e) { toast("这个浏览器不能下载，请用「复制」"); }
+  }
+
+  /** ⚙️ → 💾 存档 / 读档 */
+  function renderSaves() {
+    if (!prof) return renderTitle();
+    screen = "saves"; hideQuiz(); showScene(true); renderHUD(); clearMenu(); scrollTop();
+    setStory('<div class="big">💾 存档 / 读档 · ' + esc(prof.name) + "</div>每答一题都会自动保存。这里可以另外存 3 个手动存档，或者导出存档码换到别的设备上玩。");
+    var slots = loadSlots(prof);
+    for (var i = 0; i < 3; i++) (function (i) {
+      var s = slots[i], row = el("div", "slotrow");
+      row.appendChild(el("div", "slotinfo", "存档" + (i + 1) + (s ? "<small>" + fmtTime(s.at) + " · " + (s.data.mode === "hero" ? "Lv." + s.data.player.level + " · " : "") +
+        learnedCount(s.data) + " 字 · 故事 " + (s.data.story || 0) + " 章</small>" : "<small>（空）</small>")));
+      var r = el("div", "row");
+      r.appendChild(btn("💾 保存", function () {
+        if (s && !global.confirm("存档" + (i + 1) + " 已经有内容，要覆盖吗？")) return;
+        slots[i] = { at: now(), data: clone(prof) };
+        if (writeSlots(prof, slots)) toast("💾 已存到存档" + (i + 1));
+        renderSaves();
+      }, { cls: "blue small" }));
+      r.appendChild(btn("📂 读取", function () {
+        if (!s) return toast("存档" + (i + 1) + " 是空的");
+        if (!global.confirm("读取存档" + (i + 1) + "（" + fmtTime(s.at) + "）？\n现在的进度会被这个存档覆盖。")) return;
+        var pr = clone(s.data); pr.id = prof.id; pr.name = prof.name; normalizeProfile(pr);
+        store.profiles[store.profiles.indexOf(prof)] = pr; useProfile(pr); saveStore();
+        toast("📂 已读取存档" + (i + 1)); renderSaves();
+      }, { cls: "small", disabled: !s }));
+      row.appendChild(r);
+      $("menu").appendChild(row);
+    })(i);
+    addBtn("📤 导出存档（存档码 / 文件）", function () { renderExport(); }, { cls: "yellow" });
+    addBtn("📥 导入存档", function () { renderImport(renderSaves); }, { cls: "yellow" });
+    addBtn("↩️ 返回设置", renderSettings, { cls: "blue" });
+  }
+  function loadSlots(pr) {
+    try { var a = JSON.parse(localStorage.getItem(SLOT_KEY + pr.id) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  }
+  function writeSlots(pr, slots) {
+    try { localStorage.setItem(SLOT_KEY + pr.id, JSON.stringify(slots)); return true; }
+    catch (e) { toast("⚠️ 存档失败（浏览器存储已满或被禁用）"); return false; }
+  }
+
+  function renderExport(all) {
+    screen = "export"; hideQuiz(); showScene(true); clearMenu(); scrollTop();
+    var list = all || !prof ? store.profiles : [prof];
+    var code = makeSaveCode(list);
+    setStory('<div class="big">📤 导出存档</div>' + (list.length > 1 ? "全部 " + list.length + " 位玩家" : "玩家：" + esc(list[0].name)) +
+      "\n把下面的存档码复制下来，或下载成文件，在别的设备上用「导入存档」读进去。");
+    var ta = el("textarea", "savecode"); ta.readOnly = true; ta.value = code; ta.setAttribute("aria-label", "存档码");
+    $("menu").appendChild(ta);
+    addBtn("📋 复制存档码", function () { copyText(code, ta); }, { cls: "primary" });
+    var day = fmtTime(now()).slice(0, 10);
+    var r = el("div", "row");
+    r.appendChild(btn("⬇️ 下载 .txt", function () { downloadText(code, "xiaoke-save-" + day + ".txt", "text/plain"); }, { cls: "blue small" }));
+    r.appendChild(btn("⬇️ 下载 .json", function () { downloadText(JSON.stringify(savePayload(list), null, 1), "xiaoke-save-" + day + ".json", "application/json"); }, { cls: "blue small" }));
+    $("menu").appendChild(r);
+    if (prof && store.profiles.length > 1) addBtn(all ? "只导出 " + esc(prof.name) : "改成导出全部玩家", function () { renderExport(!all); }, { cls: "small" });
+    addBtn("↩️ 返回", prof ? renderSaves : renderTitle, { cls: "small" });
+  }
+
+  function renderImport(back) {
+    screen = "saveImport"; hideQuiz(); showScene(true); clearMenu(); scrollTop();
+    setStory('<div class="big">📥 导入存档</div>把存档码粘贴到下面，或者选一个存档文件（.txt / .json）。同名玩家会先问你要不要覆盖。');
+    var ta = el("textarea", "savecode"); ta.placeholder = "在这里粘贴存档码"; ta.setAttribute("aria-label", "粘贴存档码");
+    $("menu").appendChild(ta);
+    var lab = el("label", "filepick", "📄 选择存档文件");
+    var inp = document.createElement("input"); inp.type = "file"; inp.id = "saveFile"; inp.accept = ".txt,.json,text/plain,application/json";
+    lab.appendChild(inp); $("menu").appendChild(lab);
+    var run = function (text) {
+      var list;
+      try { list = parseSave(text); } catch (e) { toast("⚠️ " + e.message); return; }
+      var r = applyImport(list);
+      toast("📥 导入完成：新增 " + r.added + " 位，覆盖 " + r.replaced + " 位" + (r.skipped ? "，跳过 " + r.skipped + " 位" : ""));
+      if (r.added || r.replaced) setTimeout(renderTitle, 600);
+    };
+    inp.addEventListener("change", function () {
+      var f = inp.files && inp.files[0]; if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () { run(String(rd.result || "")); inp.value = ""; };
+      rd.onerror = function () { toast("⚠️ 读不了这个文件"); };
+      rd.readAsText(f);
+    });
+    addBtn("✅ 导入粘贴的存档码", function () { run(ta.value); }, { cls: "primary" });
+    addBtn("↩️ 返回", back || renderTitle, { cls: "small" });
+  }
+
   /* ═══════════════ 字卡本 / 贴纸 ═══════════════ */
   function renderBook() {
     var little = prof.mode === "little";
@@ -1487,9 +1649,11 @@
       prof.mode = prof.mode === "little" ? "hero" : "little"; prof.stage = 0; saveStore(); renderSettings();
     }, { cls: "small" });
     addBtn("✏️ 改名字 / 换头像：" + avatarHTML(prof.avatar, 40) + (AVATAR_INFO[prof.avatar] ? " " + esc(AVATAR_INFO[prof.avatar].label) : ""), function () { renderProfileForm(prof); }, { cls: "small" });
+    addBtn("💾 存档 / 读档（导出、导入、3 个存档位）", renderSaves, { cls: "yellow small" });
     addBtn("⏩ 字太简单？直接解锁下一批字", function () { prof.stage++; saveStore(); toast("已解锁 " + unlockedChars(prof).length + " 字"); renderSettings(); }, { cls: "small" });
     addBtn("🗑️ 删除这个玩家", function () {
       if (!global.confirm("确定删除 " + prof.name + " 的全部进度？不能恢复！")) return;
+      try { localStorage.removeItem(SLOT_KEY + prof.id); } catch (e) { /* */ }
       store.profiles = store.profiles.filter(function (p) { return p !== prof; });
       saveStore(); renderTitle();
     }, { cls: "danger small" });
