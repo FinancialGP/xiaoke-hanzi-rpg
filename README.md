@@ -6,3 +6,7 @@ Mostly Chinese characters (with slow read-aloud and word practice), plus a few s
 
 Character, pinyin, meaning and word data is based on CC-CEDICT (https://cc-cedict.org), licensed CC BY-SA 4.0.
 Fan-made, non-commercial homage; all artwork is original SVG/emoji. Not affiliated with Dragon Ball or its owners.
+
+## 致谢 · Credits
+
+- 拼音音节真人录音：[audio-cmn](https://github.com/hugolpz/audio-cmn)，录音 Chen Wang，CC BY-SA；整理 Hugo Lopez。详见 `audio/py/LICENSE.md`。

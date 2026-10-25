@@ -10,11 +10,16 @@ AUD = os.path.join(ROOT, "audio")
 VOICE, RATE, PITCH = "zh-CN-XiaoxiaoNeural", "-10%", "+0Hz"
 KBPS = "32k"
 # v7.8 剧情男声（台词清单来自 __xiaoke.voiced()；同一句话不同声音 → 不同文件，不会撞车）
-VOICES = {"boy": ("zh-CN-YunxiaNeural", "+0%"), "man": ("zh-CN-YunxiNeural", "-10%"), "elder": ("zh-CN-YunyangNeural", "-10%")}
+VOICES = {"boy": ("zh-CN-YunxiaNeural", "+0%"), "man": ("zh-CN-YunxiNeural", "-10%"), "elder": ("zh-CN-YunyangNeural", "-10%"),
+          "old": ("zh-CN-YunyangNeural", "-20%", "-25Hz")}   # v8.0 老爷爷：更慢更低
+
+def spec(v):
+    s = VOICES[v] if v else (VOICE, RATE)
+    return s[0], s[1], (s[2] if len(s) > 2 else PITCH)
 
 def key(t, v=None):
-    vo, ra = VOICES[v] if v else (VOICE, RATE)
-    return hashlib.sha1((vo + "|" + ra + "|" + t).encode("utf8")).hexdigest()[:12]
+    vo, ra, pi = spec(v)
+    return hashlib.sha1((vo + "|" + ra + ("" if pi == PITCH else "|" + pi) + "|" + t).encode("utf8")).hexdigest()[:12]
 
 def voiced():
     out = subprocess.check_output(["node", os.path.join(ROOT, "scripts", "list_speakables.js"), "--voiced"])
@@ -25,14 +30,14 @@ def texts():
     return sorted(set(json.loads(out)))
 
 async def make(t, sem, edge_tts, v=None):
-    vo, ra = VOICES[v] if v else (VOICE, RATE)
+    vo, ra, pi = spec(v)
     dst = os.path.join(AUD, key(t, v) + ".mp3")
     if os.path.exists(dst): return True
     async with sem:
         for attempt in range(4):
             try:
                 with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f: raw = f.name
-                await edge_tts.Communicate(t, vo, rate=ra, pitch=PITCH).save(raw)
+                await edge_tts.Communicate(t, vo, rate=ra, pitch=pi).save(raw)
                 # 单声道、低码率，去掉首尾静音
                 p = await asyncio.create_subprocess_exec("ffmpeg", "-y", "-loglevel", "error", "-i", raw,
                     "-af", "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse,apad=pad_dur=0.08",
@@ -50,7 +55,7 @@ def write_manifest(ts, vs):
     with open(os.path.join(AUD, "manifest.js"), "w", encoding="utf8") as f:
         f.write("// 自动生成：scripts/gen_audio.py · 语音 %s %s（edge-tts）· 文字 → audio/<hash>.mp3\n" % (VOICE, RATE))
         f.write("var AUDIO_MANIFEST = " + json.dumps(m, ensure_ascii=False, separators=(",", ":")) + ";\n")
-        f.write("// 剧情男声：" + ", ".join("%s=%s %s" % (v, a, b) for v, (a, b) in VOICES.items()) + "\n")
+        f.write("// 剧情男声：" + ", ".join("%s=%s" % (v, " ".join(x)) for v, x in VOICES.items()) + "\n")
         f.write("var AUDIO_VOICES = " + json.dumps(mv, ensure_ascii=False, separators=(",", ":")) + ";\n")
     return m, mv
 
@@ -83,7 +88,7 @@ def main():
     m, mv = write_manifest(ts, vs)
     keep = set(v + ".mp3" for v in m.values()) | set(h + ".mp3" for d in mv.values() for h in d.values()) | {"manifest.js", "silence.mp3"}
     for f in os.listdir(AUD):
-        if f not in keep: os.unlink(os.path.join(AUD, f))
+        if f not in keep and os.path.isfile(os.path.join(AUD, f)): os.unlink(os.path.join(AUD, f))
     print("texts %d · recorded %d · male %s · failed %d" % (len(ts), len(m), {v: len(d) for v, d in mv.items()}, len(failed)))
     for t in failed: print("  FAILED:", t)
 

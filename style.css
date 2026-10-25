@@ -329,3 +329,10 @@ button{font-family:inherit;color:inherit}
 .artzoom{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .25s;cursor:zoom-out}
 .artzoom.on{opacity:1}
 .artzoom img{max-width:96vw;max-height:92vh;border-radius:12px}
+
+/* v8.0 自动存档小提示 */
+.autosave{position:fixed;right:10px;bottom:10px;z-index:90;background:#fff;border:2px solid var(--ink);border-radius:16px;padding:4px 10px;font-size:.85rem;font-weight:700;opacity:0;pointer-events:none}
+.autosave.on{animation:autosv 2s forwards}
+@keyframes autosv{0%{opacity:0}15%{opacity:.9}75%{opacity:.9}100%{opacity:0}}
+.btn.red,button.red{background:#ffb4a8}
+.slotrow .row button{min-height:52px}

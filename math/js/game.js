@@ -19,6 +19,8 @@
   var store = { ver: 1, players: [], current: null };
   try { var raw = localStorage.getItem(STORE_KEY); if (raw) { var s = JSON.parse(raw); if (s && Array.isArray(s.players)) store = s; } } catch (e) { /* 隐私模式等 */ }
   function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { /* */ } }
+  // v8.0 切到别的 App / 关页面时马上存一次
+  try { document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") save(); }); window.addEventListener("pagehide", save); } catch (e) { /* */ }
   function newPlayer(name, avatar, track) {
     return { id: "p" + now().toString(36) + rnd(100, 999), name: name, avatar: avatar, track: track, voice: "zh", sound: true,
       prog: { pre: {}, pri: {} }, unlock: { pre: 1, pri: 1 }, stickers: [], gems: 0, trophies: [], rounds: 0, created: now() };
