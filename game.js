@@ -357,7 +357,7 @@
       name: name, mode: mode, avatar: avatar, color: color,
       player: defaultPlayer(), srs: {}, stage: 0, wishes: 0, stickers: [], story: 0,
       sessions: 0, lastDay: "", dayStreak: 0, createdAt: now(),
-      extra: { math: 0, eng: 0, clue: 0 }, settings: { pinyin: false }, reads: {}, readHelp: {}, readBalls: 0, shelfSeen: [],
+      extra: { math: 0, eng: 0, clue: 0 }, settings: { pinyin: false }, reads: {}, sceneQ: {}, readHelp: {}, readBalls: 0, shelfSeen: [],
       pinyin: { lv: 0, items: {} }, radical: { items: {} }
     };
   }
@@ -394,6 +394,7 @@
     if (!pr.extra || typeof pr.extra !== "object") pr.extra = { math: 0, eng: 0 };
     delete pr.balls;
     if (!pr.reads || typeof pr.reads !== "object") pr.reads = {};
+    if (!pr.sceneQ || typeof pr.sceneQ !== "object") pr.sceneQ = {};   // v7.6 剧情理解小问题：{ 章节序号: { i:[一次答对, 题数], o:[…] } }
     // v7：拼音 / 偏旁掌握情况（旧存档没有就从头开始）
     if (!pr.pinyin || typeof pr.pinyin !== "object") pr.pinyin = { lv: 0, items: {} };
     if (typeof pr.pinyin.lv !== "number") pr.pinyin.lv = 0;
@@ -1959,7 +1960,7 @@
     scrollTop();
   }
   function playChapter(i) {
-    story = { i: i, ch: STORY[i], phase: "intro", scene: 0, match: 0 };
+    story = { i: i, ch: STORY[i], phase: "intro", scene: 0, match: 0, quizDone: {}, qi: 0, qFirst: 0 };
     screen = "story";
     storyStep();
   }
@@ -1968,6 +1969,8 @@
     var ch = story.ch;
     var list = story.phase === "intro" ? ch.intro : story.phase === "outro" ? ch.outro : null;
     if (list && story.scene < list.length) return showStoryScene(list[story.scene]);
+    var ph = story.phase === "intro" ? "i" : story.phase === "outro" ? "o" : null;
+    if (ph && !story.quizDone[ph] && sceneQs(story.i, ph).length) return askScene(ph, story.qi || 0);
     if (story.phase === "intro") { story.phase = "match"; story.scene = 0; return startStoryMatch(); }
     if (story.phase === "outro") return finishChapter();
   }
@@ -1988,10 +1991,68 @@
     if (!selfRead) setTimeout(function () { TTS.say(plainText(text), 0.7); }, 200);
     scrollTop();
   }
+  /* ═══════════════ v7.6 剧情对话后的理解小问题（题目在 scene_quiz.js） ═══════════════ */
+  var SCENE_PRAISE = ["答对了！你听得真仔细！", "真棒！记得清清楚楚！", "对啦！你是会读故事的小侠客！"];
+  var SCENE_EMO = /[\u{1F000}-\u{1FAFF}\u{2190}-\u{2BFF}\u{FE0F}\u{200D}]/gu;
+  function sceneOptSay(o) { if (o.charAt(0) === "@") return (CAST[o.slice(1)] || CAST.narr).name; return o.replace(/\d\uFE0F?\u20E3/g, "").replace(SCENE_EMO, "").trim(); }
+  function sceneOptHTML(o, little) {
+    var say = sceneOptSay(o), body;
+    if (o.charAt(0) === "@") body = '<span class="oava">' + portraitHTML(o.slice(1), little ? 64 : 46) + '</span><span class="onm">' + esc(say) + "</span>";
+    else { var m = o.match(/^(\S+)\s(.+)$/), pic = m && !/[\u4e00-\u9fff]/.test(m[1]) ? m[1] : "";
+      body = (pic ? '<span class="oem">' + pic + "</span>" : "") + '<span class="otx">' + esc(pic ? m[2] : o) + "</span>"; }
+    return body + '<span class="osay" data-say="' + esc(say) + '" title="听一听">🔊</span>';
+  }
+  function sceneQs(i, ph) {
+    var all = (global.SCENE_QUIZ && SCENE_QUIZ[i] && SCENE_QUIZ[i][ph]) || [];
+    if (!prof || prof.mode !== "little") return all.slice(0, 3);
+    var easy = all.filter(function (d) { return d[4]; });
+    return (easy.length ? easy : all).slice(0, 2);
+  }
+  function askScene(ph, qi) {
+    var ch = story.ch, qs = sceneQs(story.i, ph), little = prof.mode === "little";
+    if (qi === 0 && !story.qStarted) { story.qStarted = true; story.qFirst = 0; }
+    if (qi >= qs.length) {
+      story.quizDone[ph] = 1; story.qi = 0; story.qStarted = false;
+      if (!prof.sceneQ) prof.sceneQ = {};
+      var rec = prof.sceneQ[story.i] || (prof.sceneQ[story.i] = {});
+      rec[ph] = [story.qFirst, qs.length]; saveStore();
+      if (story.qFirst === qs.length) { toast("🌟 全部一次答对！"); confetti(12); }
+      return storyStep();
+    }
+    story.qi = qi;
+    var d = qs[qi], lines = ph === "i" ? ch.intro : ch.outro, line = lines[d[3]] || lines[0];
+    var opts = [d[1]].concat(d[2]);
+    var q = { kind: "scene", wrongs: 0, done: false, optHTML: true, optMap: {}, options: [], optCls: "word scopt" + (little ? " big" : ""), autoSpeak: true };
+    q.title = d[0]; q.en = "想一想：刚才故事里说了什么？";
+    q.titleHTML = little ? esc(d[0]) : readHTML(d[0], learnedSet(prof));
+    q.mainHTML = '<div class="qpic sceneq">📖💬</div>';   // 不放说话人头像，免得“谁说的”题直接露答案
+    opts.forEach(function (o, k) { q.options.push("o" + k); q.optMap["o" + k] = sceneOptHTML(o, little); });
+    q.answerKey = "o0"; q.options = shuffle(q.options);
+    q.speak = little ? [d[0]].concat(q.options.map(function (k) { return sceneOptSay(opts[+k.slice(1)]); })) : d[0];
+    q.hintHTML = '<div class="schint"><span class="schspk">' + portraitHTML(line[0], 40) + "<small>" + esc((CAST[line[0]] || CAST.narr).name) + "</small></span><mark>" + esc(line[1]) + "</mark></div>";
+    q.hintSay = plainText(line[1]); q.sayAnswer = pick(SCENE_PRAISE);
+    var tok = story.qTok = (story.qTok || 0) + 1;
+    var battle = ph === "i" && ch.matches && ch.matches.length;
+    if (battle && (!hp || !story.hpKept)) { hpStart(prof); story.hpKept = true; }
+    var head = '<div class="storyhead">' + esc(ch.icon + " " + ch.title) + "</div>" + (battle ? hpHearts() : "");
+    showQuiz(q, {
+      pr: prof, tag: "💬 想一想 " + (qi + 1) + " / " + qs.length, header: head,
+      menu: [["📖 再看一遍对话", function () { story.qTok = (story.qTok || 0) + 1; story.scene = 0; storyStep(); }, { cls: "small blue" }], ["⏸ 回故事目录", renderStoryMap, { cls: "small" }]],
+      onWrong: function (qq) {
+        var hit = battle && hp && qq.wrongs === 1 && hp.cur > 1;   // 温和：后面有战斗才扣，每题最多 1 颗，永远不会扣到 0
+        if (hit) hpHit(qq);
+        var l = document.querySelector("#hintLine .schint"); if (l) { l.classList.remove("flash"); void l.offsetWidth; l.classList.add("flash"); }
+        setTimeout(function () { if (curQ === qq && !qq.done) TTS.say(qq.hintSay); }, hit ? 1900 : 400);
+      },
+      onDone: function (first) { if (first) story.qFirst++; gainExp(prof, first ? 5 : 2); saveStore(); setTimeout(function () { if (story && story.qTok === tok && screen === "story") askScene(ph, qi + 1); }, 300); }
+    });
+    [].forEach.call(document.querySelectorAll("#opts .osay"), function (sp) { sp.addEventListener("click", function (ev) { ev.stopPropagation(); ev.preventDefault(); SFX.click(); TTS.say(sp.dataset.say); }); });
+  }
   function startStoryMatch() {
     var m = story.ch.matches[story.match];
     story.foe = { name: m.name, emoji: m.emoji || "", html: m.portrait ? portraitHTML(m.portrait, 72) : null, hp: m.hp * 2, max: m.hp * 2 };
-    hpStart(prof);
+    if (!(story.match === 0 && story.hpKept && hp)) hpStart(prof);
+    story.hpKept = false;
     TTS.say((m.portrait ? "对手：" : "挑战：") + m.name + "！答对汉字就能出招！");
     storyTurn();
   }
@@ -2522,7 +2583,8 @@
   }
   // 测试钩子（只读状态 + 少量操作，便于自动化测试）
   global.__xiaoke = {
-    state: function () { return { hp: hp && { cur: hp.cur, max: hp.max, missed: hp.missed.slice() }, screen: screen, store: store, prof: prof && prof.id, q: curQ && { c: curQ.c, kind: curQ.kind || null, type: curQ.type, answerKey: curQ.answerKey, options: curQ.options, answer: curQ.answer, title: curQ.title, en: curQ.en, item: curQ.item || null }, session: session && { idx: session.idx, balls: session.balls, len: session.queue.length, only: session.only }, story: story && { i: story.i, phase: story.phase, match: story.match } }; },
+    play: function (i) { playChapter(i); }, playOutro: function (i) { playChapter(i); story.phase = "outro"; story.scene = 0; story.quizDone.i = 1; storyStep(); }, sceneQs: function (i, ph) { return sceneQs(i, ph); }, sceneQuiz: function () { return global.SCENE_QUIZ; }, cast: CAST, story: function () { return story && { i: story.i, phase: story.phase, scene: story.scene, qi: story.qi, quizDone: story.quizDone }; },
+    state: function () { return { hp: hp && { cur: hp.cur, max: hp.max, missed: hp.missed.slice() }, screen: screen, store: store, prof: prof && prof.id, q: curQ && { c: curQ.c, kind: curQ.kind || null, type: curQ.type, answerKey: curQ.answerKey, options: curQ.options, answer: curQ.answer, title: curQ.title, en: curQ.en, item: curQ.item || null, wrongs: curQ.wrongs, speak: curQ.speak, hintSay: curQ.hintSay }, session: session && { idx: session.idx, balls: session.balls, len: session.queue.length, only: session.only }, story: story && { i: story.i, phase: story.phase, match: story.match } }; },
     makeQuestion: function (mode, c, type) { var pr = newProfile("t", mode, "🧒", "#000"); return makeQuestion(pr, c, type); },
     makeExtra: function (mode, kind, stage) { var pr = newProfile("t", mode, "🧒", "#000"); pr.stage = stage || 0; return makeExtra(pr, kind); },
     english: ENGLISH, charSpeech: charSpeech,
@@ -2539,7 +2601,8 @@
       DB.forEach(function (h) { var c = h.c; add(charSpeech(c)); add(introSpeech(c, false)); add("哪个是" + c); (h.w || []).forEach(function (w) { add(w.w); }); });
       add(["你好，小侠客！", "点大按钮，开始！", "七颗龙珠集齐了！神龙出现了！说出你的愿望吧！", "龙珠故事", "读完了！真棒！", "哪个词里有", "数一数，有几个？", "这个用英语怎么说？",
         "拼一拼", "读一读拼音，找一找是哪个字", "和什么有关？", "哪个字有", "哪个字和", "是一家？", "加", "是哪个字？"]);
-      add(HP_LINES); add([HP_KO, HP_REVIVE]);
+      add(HP_LINES); add([HP_KO, HP_REVIVE]); add(SCENE_PRAISE);
+      (global.SCENE_QUIZ || []).forEach(function (c) { ["i", "o"].forEach(function (k) { (c[k] || []).forEach(function (d) { add(d[0]); [d[1]].concat(d[2]).forEach(function (o) { add(sceneOptSay(o)); }); }); }); });
       DUO_BOSSES.forEach(function (b) { add("同心协力，一起打败" + b.name + "！"); });
       STORY.forEach(function (ch) {
         (ch.intro || []).concat(ch.outro || []).forEach(function (sc) { addText(sc[1]); });

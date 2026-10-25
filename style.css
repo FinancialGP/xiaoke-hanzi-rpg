@@ -305,3 +305,17 @@ button{font-family:inherit;color:inherit}
 .kochar small{font-size:.8rem;font-weight:600;max-width:9em}
 .kochar.small{font-size:1rem}
 @media (prefers-reduced-motion:reduce){.hit,.phearts .ht.pop{animation:none}}
+/* v7.6 剧情理解小问题 */
+.qpic.sceneq{font-size:2.2rem;display:flex;align-items:flex-end;justify-content:center;gap:4px}
+.opts .opt.scopt{display:flex;align-items:center;justify-content:center;gap:6px;font-size:1.05rem;line-height:1.25;padding:8px 30px 8px 8px;position:relative;min-height:64px;white-space:normal;text-align:left}
+.opts.three .opt.scopt{grid-column:1/-1}
+.opt.scopt .oem{font-size:1.7rem}
+.opt.scopt .oava .avsvg,.opt.scopt .oava img{vertical-align:middle}
+.opt.scopt .onm{font-weight:900;font-size:1.15rem}
+.opt.scopt.big{font-size:1.25rem;min-height:84px}
+.opt.scopt .osay{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:1.1rem;padding:6px;border-radius:50%;background:#ffffffaa}
+.schint{display:flex;align-items:center;gap:8px;text-align:left;margin:6px 0;padding:6px 8px;border-radius:12px;background:#fff3c4}
+.schint .schspk{display:flex;flex-direction:column;align-items:center;font-size:.7rem}
+.schint mark{background:#ffe066;padding:2px 4px;border-radius:6px;font-weight:700}
+.schint.flash{animation:schflash 1s ease}
+@keyframes schflash{0%{box-shadow:0 0 0 4px #ffb300}100%{box-shadow:0 0 0 0 transparent}}

@@ -4,5 +4,5 @@ const root = path.join(__dirname, "..");
 const w = { document: { readyState: "loading", addEventListener() {}, getElementById() { return null; } },
   localStorage: { getItem() { return null; }, setItem() {} }, navigator: { userAgent: "" }, setTimeout, console };
 w.window = w; vm.createContext(w);
-for (const f of ["hanzi_data.js", "words2.js", "stories.js", "game.js"]) vm.runInContext(fs.readFileSync(path.join(root, f), "utf8"), w, { filename: f });
+for (const f of ["hanzi_data.js", "words2.js", "stories.js", "scene_quiz.js", "game.js"]) vm.runInContext(fs.readFileSync(path.join(root, f), "utf8"), w, { filename: f });
 process.stdout.write(JSON.stringify(w.__xiaoke.speakables()));
