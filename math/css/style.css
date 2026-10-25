@@ -102,3 +102,13 @@ select{font:inherit;font-size:1.1rem;padding:10px;border:3px solid var(--ink);bo
 /* 回到同一网址下的汉字龙珠 */
 .hzlink{position:fixed;left:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:50;background:#ffd23f;color:#3a2a10;font-weight:700;text-decoration:none;padding:8px 14px;border-radius:999px;border:3px solid #3a2a10;box-shadow:2px 3px 0 #3a2a10;font-size:15px}
 .hzlink:active{transform:translate(2px,3px);box-shadow:none}
+
+/* v2 中/EN 切换 */
+.langbtn{position:fixed;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:50;background:#fff;color:#2b2b2b;font:inherit;font-weight:800;padding:8px 14px;border-radius:999px;border:3px solid #3a2a10;box-shadow:2px 3px 0 #3a2a10;font-size:15px;cursor:pointer}
+.langbtn:active{transform:translate(2px,3px);box-shadow:none}
+#app{padding-bottom:70px}
+.en-main{font-weight:inherit}
+.qtext .en-q{font-size:1.15rem}
+.small-note{font-size:.85rem;color:#5b6b5b}
+#who .trk{font-size:.8em;color:#5b6b5b;font-weight:600}
+.practice{display:inline-block;background:#fff3c4;border:2px solid #e0b000;border-radius:999px;padding:2px 12px;font-weight:800;margin:4px 0;font-size:.95rem}
