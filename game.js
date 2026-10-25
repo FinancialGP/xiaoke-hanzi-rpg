@@ -76,6 +76,38 @@
     win: function () { [392, 494, 587, 784].forEach(function (f, i) { setTimeout(function () { beep(f, 0.2); }, i * 120); }); }
   };
 
+  /* ═══════════════ v7.2 录好的 AI 人声：audio/<hash>.mp3，清单在 audio/manifest.js（scripts/gen_audio.js 生成） ═══════════════ */
+  var RATE_KEY = "xiaoke_voice_rate";     // 单独一个键，不改存档格式；1 = 正常，0.75 = 慢速
+  var VOICE = {
+    map: (typeof AUDIO_MANIFEST !== "undefined" && AUDIO_MANIFEST) || {}, base: "audio/",
+    el: null, job: null, misses: [], plays: [], n: (typeof AUDIO_MANIFEST !== "undefined" && AUDIO_MANIFEST) ? Object.keys(AUDIO_MANIFEST).length : 0,
+    rate: (function () { try { return +localStorage.getItem(RATE_KEY) === 0.75 ? 0.75 : 1; } catch (e) { return 1; } })(),
+    has: function (t) { return Object.prototype.hasOwnProperty.call(this.map, String(t)); },
+    audio: function () {
+      if (!this.el && typeof global.Audio === "function") { this.el = new global.Audio(); this.el.preload = "auto"; }
+      return this.el;
+    },
+    unlock: function () { var a = this.audio(); if (!a || this.unlocked) return; this.unlocked = true; try { a.muted = true; a.src = this.base + "_silence.mp3"; var p = a.play(); if (p && p.then) p.then(function () { a.pause(); a.muted = false; }, function () { a.muted = false; }); else a.muted = false; } catch (e) { a.muted = false; } },
+    setRate: function (r) { this.rate = r === 0.75 ? 0.75 : 1; try { localStorage.setItem(RATE_KEY, String(this.rate)); } catch (e) { /* */ } if (this.el) this.el.playbackRate = this.rate; if (this.onRate) this.onRate(); },
+    play: function (t, done) {
+      var a = this.audio(), job = this.job, fired = false;
+      var fin = function () { if (fired) return; fired = true; if (VOICE.job === job) done(); };
+      if (!a) return fin();
+      a.onended = fin; a.onerror = function () { VOICE.miss(t); fin(); };
+      a.muted = false; a.src = this.base + this.map[String(t)] + ".mp3";
+      a.preservesPitch = true; a.webkitPreservesPitch = true; a.mozPreservesPitch = true;
+      a.defaultPlaybackRate = this.rate; a.playbackRate = this.rate;
+      this.plays.push(String(t));
+      try { var p = a.play(); if (p && p.catch) p.catch(function () { fin(); }); } catch (e) { fin(); }
+    },
+    stop: function () {
+      this.job = null;
+      if (this.el) { try { this.el.pause(); this.el.onended = null; this.el.onerror = null; } catch (e) { /* */ } }
+      try { if (global.speechSynthesis) global.speechSynthesis.cancel(); } catch (e) { /* */ }
+    },
+    miss: function (t) { this.misses.push(String(t)); }
+  };
+  function zhVoice() { return TTS.ok || VOICE.n > 0; }
   /* ═══════════════ 语音（speechSynthesis）：中文为主，英语题用英文语音 ═══════════════ */
   var SPEECH_RATE = 0.65;          // 放慢语速，适合小朋友
   var TTS = {
@@ -97,21 +129,33 @@
       pickVoice();
       try { global.speechSynthesis.addEventListener("voiceschanged", pickVoice); } catch (e) { global.speechSynthesis.onvoiceschanged = pickVoice; }
     },
-    /** text 可以是字符串，也可以是数组（逐句朗读，句子之间自然停顿） */
+    /** text 可以是字符串，也可以是数组（逐句朗读）。v7.2：优先播放预先录好的 AI 人声（audio/），没录到的那一段才用手机朗读 */
     speak: function (voice, text, rate) {
-      if (!voice || !soundOn || !text || !text.length) return false;
-      try {
-        global.speechSynthesis.cancel();
-        [].concat(text).forEach(function (t) {
+      if (!soundOn || !text || !text.length) return false;
+      var parts = [].concat(text).filter(function (t) { return t && String(t).length; });
+      if (!parts.length) return false;
+      var canClip = VOICE.has(parts[0]) || parts.some(function (t) { return VOICE.has(t); });
+      if (!canClip && !voice) return false;
+      VOICE.stop();
+      var job = VOICE.job = {}, i = 0, self = this;
+      var next = function () {
+        if (VOICE.job !== job || i >= parts.length) return;
+        var t = parts[i++];
+        if (VOICE.has(t)) { VOICE.play(t, next); return; }
+        VOICE.miss(t);
+        if (!voice) return next();
+        try {
           var u = new global.SpeechSynthesisUtterance(t);
-          u.voice = voice; u.lang = voice.lang; u.rate = rate || SPEECH_RATE; u.pitch = 1.1;
+          u.voice = voice; u.lang = voice.lang; u.rate = (rate || SPEECH_RATE) * VOICE.rate; u.pitch = 1.1;
+          u.onend = next; u.onerror = next;
           global.speechSynthesis.speak(u);
-        });
-        return true;
-      } catch (e) { return false; }
+        } catch (e) { next(); }
+      };
+      next();
+      return true;
     },
-    say: function (text, rate) { return this.ok && this.speak(this.voice, text, rate); },
-    sayEn: function (text, rate) { return this.enOk && this.speak(this.enVoice, text, rate || 0.7); }
+    say: function (text, rate) { return this.speak(this.voice, text, rate); },
+    sayEn: function (text, rate) { if (!this.enOk || !soundOn) return false; VOICE.stop(); try { var u = new global.SpeechSynthesisUtterance(text); u.voice = this.enVoice; u.lang = this.enVoice.lang; u.rate = (rate || 0.7) * VOICE.rate; global.speechSynthesis.speak(u); return true; } catch (e) { return false; } }
   };
   /** 单字朗读：先读字，停一下，再在词里读一次（如「大」→「大，大小的大」） */
   function charSpeech(c) {
@@ -472,7 +516,7 @@
   function chooseType(pr, c) {
     var item = BYC[c], r = rec(c, pr);
     var can = {
-      pic2char: !!item.pic, char2pic: !!item.pic, listen: TTS.ok, meaning: !!item.ok,
+      pic2char: !!item.pic, char2pic: !!item.pic, listen: zhVoice(), meaning: !!item.ok,
       word: (item.w || []).length > 0, fill: !!feasibleFill(pr, c), pinyin: true
     };
     var prefs;
@@ -988,7 +1032,7 @@
   function updateWho() {
     var w = $("who");
     if (!w) return;
-    var voice = TTS.ok ? "" : ' <span class="tag-voice">🔇无中文语音</span>';
+    var voice = zhVoice() ? "" : ' <span class="tag-voice">🔇无中文语音</span>';
     w.innerHTML = prof ? avatarHTML(prof.avatar, 34) + " " + esc(prof.name) + voice : "选择小侠客" + voice;
     $("homeBtn").classList.toggle("hidden", !prof);
     $("settingsBtn").classList.toggle("hidden", !prof);
@@ -1083,9 +1127,9 @@
     if (q.type === "pinyin" || q.kind) { $("hintBtn").innerHTML = "💡 提示"; }
     $("sayBtn").onclick = function () { SFX.click(); if (q.type === "pinyin" && !q.done && !q.hinted) { showHint(); } else sayQ(q); };
     $("hintBtn").onclick = function () { SFX.click(); showHint(); };
-    if (!TTS.ok) { $("sayBtn").classList.add("hidden"); }
+    if (!zhVoice()) { $("sayBtn").classList.add("hidden"); }
     if (q.kind === "eng" && q.speakEn && TTS.enOk) $("sayBtn").classList.remove("hidden");
-    if (q.type === "listen" && !TTS.ok) showHint();
+    if (q.type === "listen" && !zhVoice()) showHint();
     if (pr.settings.pinyin && q.type !== "pinyin" && !q.kind) showHint(true);
     if (q.kind === "read" || q.kind === "clue") { var sb = $("sayBtn"); sb.classList.add("hidden"); bindReading(box, pr); if (q.kind === "clue") { sb.innerHTML = "🔊 整句读给我听"; var showSb = function () { if (curQ === q && TTS.ok) sb.classList.remove("hidden"); }; setTimeout(showSb, READ_HINT_DELAY); box.querySelectorAll(".rc").forEach(function (x) { x.addEventListener("click", showSb); }); } }
     clearMenu();
@@ -2381,12 +2425,13 @@
   function renderSettings() {
     if (!prof) return;
     screen = "settings"; hideQuiz(); showScene(true); renderHUD(); clearMenu(); scrollTop();
-    setStory('<div class="big">⚙️ 设置 · ' + esc(prof.name) + "</div>中文语音：" + (TTS.ok ? "✅ " + esc(TTS.voice.name) : "❌ 本设备没有中文语音（会改用拼音/图片提示）") +
+    setStory('<div class="big">⚙️ 设置 · ' + esc(prof.name) + "</div>中文语音：✅ 录好的 AI 人声（" + Object.keys(VOICE.map).length + " 段）" + (TTS.ok ? "；没录到的用 " + esc(TTS.voice.name) : "") +
       "\n英文语音：" + (TTS.enOk ? "✅ " + esc(TTS.enVoice.name) : "❌ 没有（英语题只显示文字）") +
       "\n已解锁 " + unlockedChars(prof).length + " 字 · 第 " + (prof.stage + 1) + " 阶 · 共修炼 " + prof.sessions + " 关" +
       "\n数学题答对 " + prof.extra.math + " 次 · 英语题答对 " + prof.extra.eng + " 次" +
       "\n📚 读完小故事 " + Object.keys(prof.reads).length + " / " + READERS.length + " 本 · 雷达线索答对 " + (prof.extra.clue || 0) + " 次" +
       (Object.keys(prof.readHelp).length ? "\n👆 读书时点过的字：" + esc(Object.keys(prof.readHelp).sort(function (a, b) { return prof.readHelp[b] - prof.readHelp[a]; }).slice(0, 20).join(" ")) : ""));
+    addBtn("🐢 朗读速度：" + (VOICE.rate === 0.75 ? "慢速 0.75 ✅ · 点一下换成正常" : "正常 ✅ · 点一下换成慢速 0.75"), function () { VOICE.setRate(VOICE.rate === 0.75 ? 1 : 0.75); renderSettings(); TTS.say("你好，小侠客！"); }, { cls: "small", id: "rateBtn" });
     addBtn("🔊 测试中文语音", function () { if (!TTS.say(["你好，小侠客！"].concat(charSpeech("大")))) toast("没有可用的中文语音"); }, { cls: "small" });
     addBtn("拼音提示：" + (prof.settings.pinyin ? "总是显示 ✅" : "点 💡 才显示"), function () { prof.settings.pinyin = !prof.settings.pinyin; saveStore(); renderSettings(); }, { cls: "small" });
     addBtn("模式：" + (prof.mode === "little" ? "🍼 启蒙模式（看图听音）" : "⚔️ 侠客模式") + " → 切换", function () {
@@ -2415,11 +2460,13 @@
       session = null; duo = null; story = null; clearReadTimers(); reading = null; saveStore(); renderTitle();
     };
     $("settingsBtn").onclick = function () { SFX.click(); if (session || duo || story) { toast("先完成这一关再设置哦"); return; } renderSettings(); };
+    if ($("rateBtnTop")) { var paintRate = function () { $("rateBtnTop").textContent = VOICE.rate === 0.75 ? "🐢" : "🐇"; $("rateBtnTop").setAttribute("aria-label", VOICE.rate === 0.75 ? "朗读速度：慢速0.75" : "朗读速度：正常"); };
+      VOICE.onRate = paintRate; paintRate(); $("rateBtnTop").onclick = function () { VOICE.setRate(VOICE.rate === 0.75 ? 1 : 0.75); toast(VOICE.rate === 0.75 ? "🐢 慢速 0.75" : "🐇 正常速度"); TTS.say("你好，小侠客！"); }; }
     $("soundBtn").onclick = function () {
       soundOn = !soundOn; this.textContent = soundOn ? "🔊" : "🔇";
-      if (soundOn) { initAudio(); SFX.click(); } else { try { global.speechSynthesis.cancel(); } catch (e) { /* */ } }
+      if (soundOn) { initAudio(); SFX.click(); } else { VOICE.stop(); }
     };
-    var unlock = function () { initAudio(); if (TTS.ok) { try { var u = new global.SpeechSynthesisUtterance(""); global.speechSynthesis.speak(u); } catch (e) { /* */ } } };
+    var unlock = function () { initAudio(); VOICE.unlock(); if (TTS.ok) { try { var u = new global.SpeechSynthesisUtterance(""); global.speechSynthesis.speak(u); } catch (e) { /* */ } } };
     document.body.addEventListener("touchstart", unlock, { once: true, passive: true });
     document.body.addEventListener("click", unlock, { once: true });
     renderTitle();
@@ -2434,7 +2481,38 @@
     makeClue: function (chars) { var pr = newProfile("t", "hero", "🧒", "#000"); chars.split("").forEach(function (c) { pr.srs[c] = { b: 2, due: 0, seen: 1, ok: 1, bad: 0 }; }); return makeClue(pr); },
     tts: TTS,
     makeSkill: function (mode, kind, type, lv, chars) { var pr = newProfile("t", mode, "🧒", "#000"); pr.pinyin.lv = lv || 0; (chars || "").split("").forEach(function (c) { pr.srs[c] = { b: 2, due: 0, seen: 1, ok: 1, bad: 0 }; }); return kind === "py" ? makePinyin(pr, type) : makeRadical(pr, type); },
-    radicals: RADICALS, builds: BUILDS
+    radicals: RADICALS, builds: BUILDS,
+    voice: VOICE,
+    /** 列出游戏里所有可能读出来的中文（scripts/gen_audio.js 用它生成录音，并检查覆盖率） */
+    speakables: function () {
+      var out = {}, add = function (t) { [].concat(t).forEach(function (x) { if (x != null && String(x).length) out[String(x)] = 1; }); };
+      var addText = function (t) { add(t); add(plainText(t)); tokenize(t).forEach(function (k) { if (k.han || isHan(k.ch)) add(k.ch); if (k.word) add(k.word); }); };
+      DB.forEach(function (h) { var c = h.c; add(charSpeech(c)); add(introSpeech(c, false)); add("哪个是" + c); (h.w || []).forEach(function (w) { add(w.w); }); });
+      add(["你好，小侠客！", "点大按钮，开始！", "七颗龙珠集齐了！神龙出现了！说出你的愿望吧！", "龙珠故事", "读完了！真棒！", "哪个词里有", "数一数，有几个？", "这个用英语怎么说？",
+        "拼一拼", "读一读拼音，找一找是哪个字", "和什么有关？", "哪个字有", "哪个字和", "是一家？", "加", "是哪个字？"]);
+      DUO_BOSSES.forEach(function (b) { add("同心协力，一起打败" + b.name + "！"); });
+      STORY.forEach(function (ch) {
+        (ch.intro || []).concat(ch.outro || []).forEach(function (sc) { addText(sc[1]); });
+        (ch.matches || []).forEach(function (m) { add((m.portrait ? "对手：" : "挑战：") + m.name + "！答对汉字就能出招！"); });
+        add(ch.title.split(" · ")[1] + "，完成！");
+      });
+      READERS.forEach(function (st) { st.lines.forEach(function (l) { addText(l[1]); }); st.qs.forEach(function (q) { addText(q.q); }); });
+      CLUE_PLACES.forEach(function (p) { p[2].forEach(function (pos) { addText("龙珠在" + p[0] + pos); if (pos !== "里") addText("龙珠在" + p[0] + pos + "面"); }); });
+      NAMES.concat(Object.keys(WORD_PY)).forEach(add);
+      for (var n = 1; n <= 10; n++) add("一共有" + zhCount(n) + "个");
+      for (var a = 0; a <= 20; a++) for (var b = 0; b <= 20; b++) {
+        if (a + b <= 20) { add(ZH_NUM[a] + "加" + ZH_NUM[b] + "等于几？"); add(ZH_NUM[a] + "加" + ZH_NUM[b] + "等于" + ZH_NUM[a + b]); }
+        if (b <= a) { add(ZH_NUM[a] + "减" + ZH_NUM[b] + "等于几？"); add(ZH_NUM[a] + "减" + ZH_NUM[b] + "等于" + ZH_NUM[a - b]); }
+      }
+      ENGLISH.forEach(function (it) { add(it[2]); });
+      Object.keys(SINGLE_SAY).forEach(function (k) { add(SINGLE_SAY[k][0]); });
+      syllables().list.forEach(function (o) { add(sylSpeak(o)); });
+      TONE_SAY.forEach(add);
+      RADICALS.forEach(function (R) { add([R.name, R.cue, "有" + R.name]); R.list.forEach(add); });
+      BUILDS.forEach(function (B) { add([B[1], B[2]]); });
+      return Object.keys(out);
+    },
+    _: 0
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })(window);

@@ -1,5 +1,13 @@
 # 小侠客汉字龙珠 v7 更新说明（主动阅读版 · 合并版）
 
+## v7.2 · AI 人声朗读 + 慢速
+
+- 所有字、词、故事句子、读后问题、雷达线索、拼音/偏旁修炼、数学题的中文朗读，都换成提前录好的 AI 人声（微软 Edge 免费在线语音 zh-CN-XiaoxiaoNeural，语速 -10%），放在 `audio/`（单声道 32kbps MP3，按文字的哈希命名，清单 `audio/manifest.js`）。没录到的（比如玩家自己起的名字）自动退回手机自带朗读。英语单词仍用手机的英文语音。
+- 新增朗读速度：顶部 🐇/🐢 按钮和设置里都能切换「正常 / 慢速 0.75」，单独存在 `xiaoke_voice_rate`，不改存档格式。
+- 内容改了以后运行 `python3 scripts/gen_audio.py` 补录；`python3 scripts/gen_audio.py --check` 检查覆盖率。
+- 缓存版本号 `?v=7.2`。
+
+
 v7 = GitHub 上最新的 v6（龟仙人/雅木查头像、2000 字、每张字卡都有英文、数学/英语题、动画防抖、存档/读档/导出导入）**+** Mac 上另做的「主动阅读」改动（当时叫 v5）。因为 GitHub 的提交记录里已经用过 v5、v6，这次统一叫 **v7**。
 
 - GitHub 版的所有功能都保留，文件仍是平铺结构（index.html、game.js、style.css……），新增 `stories.js` 和 `scripts/check_stories.js`。
