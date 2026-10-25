@@ -1,5 +1,5 @@
 /**
- * 小侠客汉字龙珠 v4（基于「小侠客汉字江湖」v3 改版）
+ * 小侠客汉字龙珠 v7（GitHub v6 存档/动画修复 + 主动阅读：点字听音、故事书架、龙珠雷达线索）
  * 模块：数据 · 玩家档案/存档 · 语音 · 间隔复习 · 出题（汉字为主 + 少量数学/英语） · 修炼(集龙珠) · 龙珠故事 · 双人 · UI
  * 纯静态网页：直接打开 index.html 即可。
  */
@@ -311,7 +311,7 @@
       name: name, mode: mode, avatar: avatar, color: color,
       player: defaultPlayer(), srs: {}, stage: 0, wishes: 0, stickers: [], story: 0,
       sessions: 0, lastDay: "", dayStreak: 0, createdAt: now(),
-      extra: { math: 0, eng: 0 }, settings: { pinyin: false }
+      extra: { math: 0, eng: 0, clue: 0 }, settings: { pinyin: false }, reads: {}, readHelp: {}, readBalls: 0, shelfSeen: []
     };
   }
 
@@ -346,7 +346,10 @@
     if (!pr.settings) pr.settings = { pinyin: false };
     if (!pr.extra || typeof pr.extra !== "object") pr.extra = { math: 0, eng: 0 };
     delete pr.balls;
-    ["stage", "wishes", "sessions", "dayStreak", "story"].forEach(function (k) { if (typeof pr[k] !== "number") pr[k] = 0; });
+    if (!pr.reads || typeof pr.reads !== "object") pr.reads = {};
+    if (!pr.readHelp || typeof pr.readHelp !== "object") pr.readHelp = {};
+    if (!Array.isArray(pr.shelfSeen)) pr.shelfSeen = [];
+    ["stage", "wishes", "sessions", "dayStreak", "story", "readBalls"].forEach(function (k) { if (typeof pr[k] !== "number") pr[k] = 0; });
   }
   function saveStore() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); return true; }
@@ -763,7 +766,7 @@
     else main = '<div class="qpic" id="qTarget">🔊</div>';
     var n = q.options.length;
     box.innerHTML = (ctx.header || "") +
-      '<div class="qbox"><span class="qtag">' + (ctx.tag || "修炼") + '</span><div class="qtitle">' + esc(q.title) + '</div><div class="qen">' + esc(q.en) + "</div>" +
+      '<div class="qbox"><span class="qtag">' + (ctx.tag || "修炼") + '</span><div class="qtitle">' + (q.titleHTML || esc(q.title)) + '</div><div class="qen">' + esc(q.en) + "</div>" +
       main + '<div class="hintline" id="hintLine"></div>' +
       '<div class="tools"><button class="btn blue" type="button" id="sayBtn">🔊 听</button><button class="btn yellow" type="button" id="hintBtn">💡 拼音提示</button></div>' +
       '<div class="opts' + (n === 3 ? " three" : "") + '" id="opts"></div></div>';
@@ -783,6 +786,7 @@
     if (q.kind === "eng" && q.speakEn && TTS.enOk) $("sayBtn").classList.remove("hidden");
     if (q.type === "listen" && !TTS.ok) showHint();
     if (pr.settings.pinyin && q.type !== "pinyin" && !q.kind) showHint(true);
+    if (q.kind === "read" || q.kind === "clue") { var sb = $("sayBtn"); sb.classList.add("hidden"); bindReading(box, pr); if (q.kind === "clue") { sb.innerHTML = "🔊 整句读给我听"; var showSb = function () { if (curQ === q && TTS.ok) sb.classList.remove("hidden"); }; setTimeout(showSb, READ_HINT_DELAY); box.querySelectorAll(".rc").forEach(function (x) { x.addEventListener("click", showSb); }); } }
     clearMenu();
     (ctx.menu || []).forEach(function (m) { addBtn(m[0], m[1], m[2]); });
     if (q.autoSpeak) setTimeout(function () { if (curQ === q) sayQ(q); }, 300);
@@ -792,6 +796,7 @@
   /** 答对 / 答错后朗读的内容 */
   function sayAnswer(q) {
     if (q.kind === "eng") { if (!TTS.sayEn(q.item[0])) TTS.say(q.sayAnswer); return; }
+    if (q.kind === "read") return;
     if (q.kind) return TTS.say(q.sayAnswer);
     TTS.say(q.type === "fill" ? q.word.w : charSpeech(q.c));
   }
@@ -816,7 +821,7 @@
       SFX.correct();
       sayAnswer(q);
       var line = $("hintLine");
-      if (line) line.innerHTML = (q.wrongs === 0 ? "✨ 太棒了！ " : "👍 对啦！ ") + (q.kind ? q.hintHTML : charHint(q.c));
+      if (line) line.innerHTML = (q.wrongs === 0 ? "✨ 太棒了！ " : "👍 对啦！ ") + (q.kind === "read" ? "" : q.kind ? q.hintHTML : charHint(q.c));
       setTimeout(function () { if (ctx.onDone) ctx.onDone(q.wrongs === 0, b, q); }, q.wrongs === 0 ? 1300 : 1700);
     } else {
       q.wrongs++;
@@ -824,6 +829,7 @@
       SFX.soft();
       showHint(true);
       if (!q.kind) setTimeout(function () { if (curQ === q && !q.done) sayAnswer(q); }, 350);
+      if (q.kind === "clue" && q.wrongs === 1) { var ln = $("hintLine"); if (ln) ln.innerHTML = "👀 再读一读：龙珠在哪里？"; }
       var left = Array.prototype.filter.call(document.querySelectorAll("#opts .opt"), function (x) { return !x.disabled; });
       if (q.wrongs >= 2 || ctx.pr.mode === "little") {
         left.forEach(function (x) { if (x.dataset.key === q.answerKey) x.classList.add("glow"); });
@@ -976,6 +982,8 @@
     clearMenu();
     addBtn(ballSVG(7, 34) + " 修炼一关：集齐 7 颗龙珠", function () { startSession(); }, { cls: "primary" });
     addBtn("📖 龙珠故事 · " + (storyProgress(prof) >= STORY.length ? "全部通关 🏆" : esc(STORY[storyProgress(prof)].title)), renderStoryMap, { cls: "yellow" });
+    var openL = unlockedStories(prof), unread = openL.filter(function (st) { return !prof.reads[st.id]; }).length;
+    addBtn("📚 故事书架 · 能读 " + openL.length + " 本" + (unread ? " · 🆕" + unread : ""), renderShelf, { cls: "yellow" });
     var row = el("div", "row");
     row.appendChild(btn("🔤 字卡本", renderBook, { cls: "blue" }));
     row.appendChild(btn("🌟 贴纸", renderStickers, { cls: "blue" }));
@@ -1039,6 +1047,8 @@
     var slots = shuffle(idx.filter(seen)).concat(shuffle(idx.filter(function (i) { return !seen(i); })));
     var k = Math.random() < 0.5 ? EXTRA_PER_SESSION : EXTRA_PER_SESSION - 1;
     slots.slice(0, k).forEach(function (i) { queue[i] = { extra: nextExtraKind(), retry: false }; });
+    // v5：认识的字够了，大约每两关出一道「龙珠雷达线索」阅读题
+    if (clueEligible(prof) && Math.random() < 0.5) { var free = idx.filter(function (i) { return !queue[i].extra; }); if (free.length) queue[pick(free)] = { clue: true, retry: false }; }
     return queue;
   }
   function startSession() {
@@ -1052,7 +1062,7 @@
     if (!session) return goHome();
     if (session.idx >= session.queue.length) return endSession();
     var item = session.queue[session.idx], pr = session.pr, c = item.c;
-    if (item.extra) return askInSession(item);
+    if (item.extra || item.clue) return askInSession(item);
     var r = rec(c, pr);
     if (!r.seen && !session.introduced[c]) { session.introduced[c] = 1; session.newChars.push(c); return showIntro(c, function () { askInSession(item); }); }
     askInSession(item);
@@ -1060,15 +1070,16 @@
   function sessionMenu() { return [["⏸ 休息一下（回主页）", function () { saveStore(); session = null; goHome(); }, { cls: "small" }]]; }
   function askInSession(item) {
     var pr = session.pr;
-    var q = item.extra ? makeExtra(pr, item.extra) : makeQuestion(pr, item.c);
+    var q = item.clue ? makeClue(pr) : item.extra ? makeExtra(pr, item.extra) : makeQuestion(pr, item.c);
     var tag = item.retry ? "🔁 再练一次" : "第 " + Math.min(SESSION_LEN, session.balls + 1) + " 颗龙珠";
     if (item.extra) tag = (item.extra === "math" ? "🔢 数学 · " : "🔤 英语 · ") + tag;
+    if (item.clue) tag = "📡 雷达线索 · " + tag;
     showQuiz(q, {
       pr: pr, tag: tag, header: trackerHTML(), menu: sessionMenu(),
       onDone: function (first, b) {
-        if (item.extra) recordExtra(pr, item.extra, first); else recordResult(pr, item.c, first);
+        if (item.clue) { if (first) pr.extra.clue = (pr.extra.clue || 0) + 1; } else if (item.extra) recordExtra(pr, item.extra, first); else recordResult(pr, item.c, first);
         if (first) { session.first++; gainExp(pr, 8 + Math.min(10, pr.player.level)); }
-        else if (item.extra) gainExp(pr, 3);
+        else if (item.extra || item.clue) gainExp(pr, 3);
         else {
           gainExp(pr, 3);
           if (session.missed.indexOf(item.c) === -1) session.missed.push(item.c);
@@ -1177,8 +1188,11 @@
     if (s.missed.length) html += "\n🔁 下次再练：" + s.missed.join(" ") + "（会自动安排复习）";
     if (s.advanced) html += "\n🚀 进阶！解锁了新的字，现在共 " + unlockedChars(pr).length + " 个字";
     if (pr.dayStreak > 1) html += "\n🔥 连续 " + pr.dayStreak + " 天修炼！";
+    var newBooks = pr.mode === "little" ? [] : newlyUnlockedStories(pr);
+    if (newBooks.length) { html += "\n📚 新故事解锁：" + newBooks.map(function (st) { return st.icon + st.title; }).join("、"); saveStore(); }
     setStory(html);
     clearMenu();
+    if (newBooks.length) addBtn("📚 去读新故事！", renderShelf, { cls: "yellow" });
     addBtn("⚡ 再来一关", startSession, { cls: "primary" });
     addBtn(pr.mode === "little" ? "🏠" : "🏠 回主页", goHome, { cls: "blue" });
     if (s.advanced) { confetti(30); SFX.level(); }
@@ -1349,7 +1363,7 @@
     hideQuiz(); showScene(true); renderHUD();
     $("logo").classList.add("hidden");
     var done = storyProgress(prof);
-    setStory('<div class="big">📖 龙珠故事 · 早期篇</div>跟着小悟空、布尔玛、小库林和龟仙人去冒险，参加天下第一武道会！\n<small>故事会读出来；比赛靠答对汉字。</small>');
+    setStory('<div class="big">📖 龙珠故事 · 早期篇</div>跟着小悟空、布尔玛、小库林和龟仙人去冒险，参加天下第一武道会！\n<small>' + (prof.mode === "little" ? "故事会读出来；比赛靠答对汉字。" : "先自己读，不会的字点一下；比赛靠答对汉字。") + '</small>');
     clearMenu();
     STORY.forEach(function (ch, i) {
       var locked = i > done;
@@ -1376,15 +1390,18 @@
   function plainText(t) { return t.replace(/[～…]/g, "，"); }
   function showStoryScene(sc) {
     var who = CAST[sc[0]] || CAST.narr, text = sc[1];
+    var selfRead = prof.mode !== "little";   // v5：侠客模式先自己读、点字求助；启蒙模式照旧朗读
     hideQuiz(); showScene(true); renderHUD();
     setStory('<div class="storyhead">' + esc(story.ch.icon + " " + story.ch.title) + " · " + esc(story.ch.place) + "</div>" +
       '<div class="bubble"><div class="spk">' + portraitHTML(sc[0], 96) + '<div class="spkname">' + esc(who.name) + "</div></div>" +
-      '<div class="say">' + esc(text) + "</div></div>");
+      '<div class="say">' + (selfRead ? readLineHTML(text, learnedSet(prof), 0) : esc(text)) + "</div></div>" + (selfRead ? '<div class="rtip">👆 先自己读，不会的字点一下</div>' : ""));
     clearMenu();
-    addBtn('<span style="font-size:1.8rem">👉</span> 继续', function () { story.scene++; storyStep(); }, { cls: "primary" });
-    addBtn("🔊 再听一次", function () { TTS.say(plainText(text), 0.7); }, { cls: "small blue" });
-    addBtn("⏸ 回故事目录", renderStoryMap, { cls: "small" });
-    setTimeout(function () { TTS.say(plainText(text), 0.7); }, 200);
+    var tm = [];
+    addBtn('<span style="font-size:1.8rem">👉</span> 继续', function () { tm.forEach(clearTimeout); story.scene++; storyStep(); }, { cls: "primary" });
+    if (selfRead) { bindReading($("story"), prof); tm = armLineHelp($("story"), [text]); }
+    else addBtn("🔊 再听一次", function () { TTS.say(plainText(text), 0.7); }, { cls: "small blue" });
+    addBtn("⏸ 回故事目录", function () { tm.forEach(clearTimeout); renderStoryMap(); }, { cls: "small" });
+    if (!selfRead) setTimeout(function () { TTS.say(plainText(text), 0.7); }, 200);
     scrollTop();
   }
   function startStoryMatch() {
@@ -1396,14 +1413,15 @@
   function storyTurn() {
     if (!story) return;
     var f = story.foe, ch = story.ch;
-    var q = maybeExtra(prof), c = q ? null : pickOneChar(prof);
+    var clueTurn = !f.clued && clueEligible(prof); f.clued = true;
+    var q = clueTurn ? makeClue(prof) : maybeExtra(prof), c = q ? null : pickOneChar(prof);
     if (!q) q = makeQuestion(prof, c);
-    var tag = ch.matches.length > 1 ? "第 " + (story.match + 1) + " 场 / " + ch.matches.length : "📖 " + ch.title.split(" · ")[0];
+    var tag = clueTurn ? "📡 先找到龙珠才能出招！" : ch.matches.length > 1 ? "第 " + (story.match + 1) + " 场 / " + ch.matches.length : "📖 " + ch.title.split(" · ")[0];
     showQuiz(q, {
       pr: prof, tag: tag, header: arenaHTML(avatarHTML(prof.avatar, 72), prof.name, 100, f, f.hp / f.max * 100),
       menu: [["⏸ 回故事目录", renderStoryMap, { cls: "small" }]],
       onDone: function (first) {
-        if (q.kind) recordExtra(prof, q.kind, first); else recordResult(prof, c, first);
+        if (q.kind === "clue") { if (first) prof.extra.clue = (prof.extra.clue || 0) + 1; } else if (q.kind) recordExtra(prof, q.kind, first); else recordResult(prof, c, first);
         gainExp(prof, first ? 6 : 2);
         f.hp = Math.max(0, f.hp - (first ? 2 : 1));
         fxBlast($("meEm"), $("foeEm"));
@@ -1603,6 +1621,234 @@
     addBtn("↩️ 返回", back || renderTitle, { cls: "small" });
   }
 
+  /* ═══════════════ v5 · 主动阅读：点字听音、故事书架、龙珠雷达线索 ═══════════════ */
+  var NAMES = (typeof STORY_NAMES !== "undefined" ? STORY_NAMES : []).concat(["布尔玛", "龟仙人", "雅木查", "天津饭", "饺子", "蓝琪"])
+    .filter(function (x, i, a) { return a.indexOf(x) === i; }).sort(function (a, b) { return b.length - a.length; });
+  // 字库里没有的专名用字，以及在句子里读音和字库默认读音不同的词（只覆盖用到的）
+  var WORD_PY = {
+    "小悟空": ["xiǎo", "wù", "kōng"], "悟空": ["wù", "kōng"], "布尔玛": ["bù", "ěr", "mǎ"], "龟仙人": ["guī", "xiān", "rén"],
+    "饺子": ["jiǎo", "zi"], "跑得": ["pǎo", "de"], "睡觉": ["shuì", "jiào"], "蓝琪": ["lán", "qí"]
+  };
+  var READ_HINT_DELAY = 7000;          // 「整句读给我听」至少等 7 秒，或孩子先点过字
+  function learnedSet(pr) { var s = {}; Object.keys(pr.srs).forEach(function (c) { if (pr.srs[c].ok > 0) s[c] = 1; }); return s; }
+  function isHan(ch) { return /[\u4e00-\u9fff]/.test(ch); }
+  /** 把句子切成 {ch, py, name, word}，专名和特殊读音词按整词处理 */
+  function tokenize(text) {
+    var out = [], i = 0;
+    while (i < text.length) {
+      var hit = null;
+      NAMES.concat(Object.keys(WORD_PY)).forEach(function (n) { if (!hit && text.substr(i, n.length) === n) hit = n; });
+      if (hit) {
+        var isName = NAMES.indexOf(hit) !== -1, pys = WORD_PY[hit];
+        for (var k = 0; k < hit.length; k++) out.push({ ch: hit[k], py: pys ? pys[k] : (BYC[hit[k]] ? BYC[hit[k]].py : ""), name: isName, word: hit });
+        i += hit.length; continue;
+      }
+      var ch = text[i];
+      out.push({ ch: ch, py: BYC[ch] ? BYC[ch].py : "", han: isHan(ch) });
+      i++;
+    }
+    out.forEach(function (t) { if (t.name) t.han = true; });
+    return out;
+  }
+  /** 只统计非专名的汉字：已学字所占比例（「只用已学字」用程序算，不靠估计） */
+  function storyChars(st) {
+    var hz = [];
+    [st.title].concat(st.lines.map(function (l) { return l[1]; })).forEach(function (t) {
+      tokenize(t).forEach(function (x) { if (x.han && !x.name) hz.push(x.ch); });
+    });
+    return hz;
+  }
+  var STORY_CHARS = {};
+  (typeof READERS !== "undefined" ? READERS : []).forEach(function (st) { STORY_CHARS[st.id] = storyChars(st); });
+  function knownRatio(st, known) {
+    var hz = STORY_CHARS[st.id]; if (!hz.length) return 1;
+    return hz.filter(function (c) { return known[c]; }).length / hz.length;
+  }
+  function unknownDistinct(st, known) { return STORY_CHARS[st.id].filter(function (c, i, a) { return !known[c] && a.indexOf(c) === i; }); }
+  function storyUnlocked(st, known) { return knownRatio(st, known) >= 0.95; }
+  function unlockedStories(pr) { var k = learnedSet(pr); return READERS.filter(function (st) { return storyUnlocked(st, k); }); }
+
+  /** 生成可点读的句子：已学字不标拼音（先自己读），没学过的字和专名自动标拼音 */
+  function readHTML(text, known) {
+    return tokenize(text).map(function (t) {
+      if (!t.han) return esc(t.ch);
+      var ruby = t.name || !known[t.ch];
+      var inner = ruby && t.py ? "<ruby>" + esc(t.ch) + "<rt>" + esc(t.py) + "</rt></ruby>" : esc(t.ch);
+      return '<span class="rc' + (ruby ? " unk" : "") + '" data-c="' + esc(t.ch) + '" data-py="' + esc(t.py) + '"' + (t.word && WORD_PY[t.word] && !t.name ? ' data-w="' + esc(t.word) + '"' : "") + ">" + inner + "</span>";
+    }).join("");
+  }
+  /** 点字求助：读这个字的音，短暂显示拼音；学过的字记成「弱字」进入复习 */
+  function markHelp(pr, c) {
+    if (!pr.readHelp) pr.readHelp = {};
+    pr.readHelp[c] = (pr.readHelp[c] || 0) + 1;
+    var r = pr.srs[c];
+    if (BYC[c] && r && r.seen) { r.b = Math.min(r.b, 1); r.due = now(); r.help = (r.help || 0) + 1; }
+  }
+  function bindReading(root, pr, onTap) {
+    root.querySelectorAll(".rc").forEach(function (sp) {
+      sp.addEventListener("click", function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        var c = sp.dataset.c, w = sp.dataset.w;
+        TTS.say(w || c);
+        var old = sp.querySelector(".rpop"); if (old) old.remove();
+        var pop = el("span", "rpop", esc(sp.dataset.py || "?")); sp.appendChild(pop);
+        sp.classList.add("tapped");
+        setTimeout(function () { pop.remove(); }, 1600);
+        markHelp(pr, c); saveStore();
+        if (onTap) onTap(sp);
+      });
+    });
+  }
+  /** 一句话 + 延迟出现的「整句读给我听」按钮 */
+  function readLineHTML(text, known, idx) {
+    return '<div class="rline" data-i="' + idx + '"><div class="rtext">' + readHTML(text, known) + '</div>' +
+      '<button class="btn small blue rsay hidden" type="button" data-i="' + idx + '">🔊 整句读给我听</button></div>';
+  }
+  function armLineHelp(root, texts) {
+    var timers = [];
+    root.querySelectorAll(".rline").forEach(function (ln) {
+      var b = ln.querySelector(".rsay"), i = +ln.dataset.i;
+      var show = function () { b.classList.remove("hidden"); };
+      timers.push(setTimeout(show, READ_HINT_DELAY));
+      ln.querySelectorAll(".rc").forEach(function (sp) { sp.addEventListener("click", show); });
+      b.addEventListener("click", function () { SFX.click(); TTS.say(plainText(texts[i]), 0.7); });
+    });
+    return timers;
+  }
+
+  /* ── 故事书架 ── */
+  function readerCast(k) { return k === "mom" ? { name: "妈妈", emoji: "👩" } : CAST[k] || CAST.narr; }
+  function renderShelf() {
+    screen = "shelf"; story = null; reading = null;
+    hideQuiz(); showScene(true); renderHUD(); clearMenu();
+    $("logo").classList.add("hidden");
+    var known = learnedSet(prof), open = unlockedStories(prof);
+    setStory('<div class="big">📚 故事书架</div>你认识 ' + Object.keys(known).length + " 个字，能读 " + open.length + " / " + READERS.length + " 本小书。\n" +
+      "<small>先自己读！不会的字点一下就能听。读完回答问题，得龙珠 " + ballSVG(1, 22) + "（" + (prof.readBalls || 0) % 7 + " / 7）</small>");
+    var grid = el("div", "shelf");
+    var sorted = open.slice().sort(function (a, b) { return ((prof.reads || {})[a.id] ? 1 : 0) - ((prof.reads || {})[b.id] ? 1 : 0); });
+    sorted.forEach(function (st) {
+      var n = (prof.reads || {})[st.id] || 0, pct = Math.round(knownRatio(st, known) * 100);
+      grid.appendChild(btn('<span class="bk-ic">' + st.icon + "</span><b>" + readHTML(st.title, known) + "</b><small>" + (n ? "✅ 读过 " + n + " 次" : "🆕 新书") + " · 认识 " + pct + "%</small>",
+        function () { readStory(st); }, { cls: "book-btn" + (n ? "" : " fresh") }));
+    });
+    var locked = READERS.filter(function (st) { return open.indexOf(st) === -1; })
+      .sort(function (a, b) { return unknownDistinct(a, known).length - unknownDistinct(b, known).length; }).slice(0, 3);
+    locked.forEach(function (st) {
+      grid.appendChild(btn('<span class="bk-ic">🔒</span><b>' + st.icon + ' ？？？</b><small>再多认识一些字就能读</small>', function () {}, { cls: "book-btn locked", disabled: true }));
+    });
+    $("menu").appendChild(grid);
+    if (!open.length) addBtn("⚡ 先去修炼认字", startSession, { cls: "primary" });
+    addBtn("🏠 回主页", goHome, { cls: "blue" });
+    scrollTop();
+  }
+  var reading = null;
+  function readStory(st) {
+    reading = { st: st, taps: 0, timers: [] };
+    screen = "reading"; hideQuiz(); showScene(true); renderHUD(); clearMenu();
+    var known = learnedSet(prof), texts = st.lines.map(function (l) { return l[1]; });
+    var html = '<div class="storyhead">' + st.icon + " " + readHTML(st.title, known) + '</div><div class="reader">';
+    st.lines.forEach(function (l, i) {
+      var who = readerCast(l[0]);
+      html += '<div class="rrow"><span class="rwho">' + (l[0] === "mom" ? '<span class="avemo" style="font-size:34px">👩</span>' : portraitHTML(l[0], 44)) + "</span>" + readLineHTML(l[1], known, i) + "</div>";
+    });
+    html += '</div><div class="rtip">👆 先自己读。不会的字，点一下！</div>';
+    setStory(html);
+    var root = $("story");
+    bindReading(root, prof, function () { reading.taps++; });
+    reading.timers = armLineHelp(root, texts);
+    addBtn("✅ 我读完了！回答问题", function () { clearReadTimers(); askComprehension(st, 0, 0); }, { cls: "primary" });
+    addBtn("📚 回书架", function () { clearReadTimers(); renderShelf(); }, { cls: "small" });
+    scrollTop();
+  }
+  function clearReadTimers() { if (reading) reading.timers.forEach(clearTimeout); }
+  function askComprehension(st, qi, firstCount) {
+    var qd = st.qs[qi], known = learnedSet(prof);
+    var q = { kind: "read", type: "comp", wrongs: 0, done: false, autoSpeak: false, optHTML: true, optMap: {}, options: [], optCls: "word" };
+    q.title = qd.q; q.en = "Read and choose"; q.mainHTML = '<div class="qpic" style="font-size:3.2rem">' + st.icon + "📖</div>"; q.titleHTML = readHTML(qd.q, known);
+    qd.opts.forEach(function (o, i) { q.options.push("o" + i); q.optMap["o" + i] = esc(o[0]); if (o[1]) q.answerKey = "o" + i; });
+    q.options = shuffle(q.options);
+    q.hintHTML = "📖 回去看看故事里怎么说的～"; q.sayAnswer = qd.q; q.speak = qd.q;
+    showQuiz(q, {
+      pr: prof, tag: "📚 读后小问题 " + (qi + 1) + " / " + st.qs.length,
+      menu: [["📖 再看一遍故事", function () { readStory(st); }, { cls: "small" }]],
+      onDone: function (first) {
+        var fc = firstCount + (first ? 1 : 0);
+        if (qi + 1 < st.qs.length) return askComprehension(st, qi + 1, fc);
+        finishReading(st, fc);
+      }
+    });
+  }
+  function finishReading(st, firstCount) {
+    if (!prof.reads) prof.reads = {};
+    var firstTime = !prof.reads[st.id];
+    prof.reads[st.id] = (prof.reads[st.id] || 0) + 1;
+    var earn = firstCount > 0;            // 读后问题一次答对才得阅读龙珠
+    if (earn) prof.readBalls = (prof.readBalls || 0) + 1;
+    gainExp(prof, firstTime ? 20 : 8);
+    var taps = reading ? reading.taps : 0;
+    reading = null; saveStore();
+    hideQuiz(); showScene(true); renderHUD(); clearMenu();
+    var got = prof.readBalls % 7 || 7;
+    setStory('<div class="big">🎉 读完了！</div>' + (earn ? '<div style="text-align:center">' + ballSVG(got, 64, "pop") + "</div>得到第 " + got + " 颗阅读龙珠！" : "💪 这次问题没有一次答对，下次读仔细一点，就能拿到龙珠！") +
+      (taps ? "\n👆 你点了 " + taps + " 次字来求助，这些字会安排复习。" : "\n🌟 一个字都没点，全部自己读出来了！") +
+      (firstCount === st.qs.length ? "\n✨ 问题一次就全答对了！" : ""));
+    if (earn) { SFX.ball(); confetti(16); }
+    TTS.say("读完了！真棒！");
+    var after = function () {
+      clearMenu();
+      addBtn("📚 回书架，再读一本", renderShelf, { cls: "primary" });
+      addBtn("🏠 回主页", goHome, { cls: "blue" });
+    };
+    if (earn && prof.readBalls % 7 === 0) return setTimeout(function () { summonDragon(prof, function () { renderShelf(); }); }, 1200);
+    after();
+  }
+  /** 进阶后：看看有没有新解锁的故事 */
+  function newlyUnlockedStories(pr) {
+    if (!pr.shelfSeen) pr.shelfSeen = [];
+    var fresh = unlockedStories(pr).filter(function (st) { return pr.shelfSeen.indexOf(st.id) === -1; });
+    fresh.forEach(function (st) { pr.shelfSeen.push(st.id); });
+    return fresh;
+  }
+
+  /* ── 龙珠雷达线索：读懂一句话才能找到龙珠 ── */
+  var CLUE_PLACES = [
+    ["山", "⛰️", ["上", "下"]], ["树", "🌳", ["上", "下"]], ["车", "🚗", ["上", "下", "里"]], ["床", "🛏️", ["上", "下"]],
+    ["云", "☁️", ["上", "下"]], ["石", "🪨", ["上", "下"]], ["书", "📖", ["上", "下"]], ["水", "🌊", ["里"]],
+    ["花", "🌸", ["里", "下"]], ["草", "🌿", ["里"]], ["家", "🏠", ["里"]], ["门", "🚪", ["外", "里"]], ["火", "🔥", ["里"]]
+  ];
+  function cluePlaces(pr) {
+    var k = learnedSet(pr);
+    if (!k["在"]) return [];
+    return CLUE_PLACES.map(function (p) { return [p[0], p[1], p[2].filter(function (pos) { return k[pos]; })]; })
+      .filter(function (p) { return k[p[0]] && p[2].length; });
+  }
+  function clueEligible(pr) { return pr.mode !== "little" && cluePlaces(pr).length >= 3; }
+  function sceneHTML(emoji, pos) {
+    var b = ballSVG(4, 30);
+    if (pos === "上") return '<span class="scn"><span class="sb">' + b + '</span><span class="spl">' + emoji + "</span><span class=\"sb\"></span></span>";
+    if (pos === "下") return '<span class="scn"><span class="sb"></span><span class="spl">' + emoji + '</span><span class="sb">' + b + "</span></span>";
+    if (pos === "外") return '<span class="scn row"><span class="spl">' + emoji + '</span><span class="sb">' + b + "</span></span>";
+    return '<span class="scn"><span class="sb"></span><span class="spl in">' + emoji + '<i class="sin">' + b + '</i></span><span class="sb"></span></span>';
+  }
+  function makeClue(pr) {
+    var places = shuffle(cluePlaces(pr)), p = places[0], pos = pick(p[2]);
+    var text = "龙珠在" + p[0] + pos + (pos === "里" ? "" : (learnedSet(pr)["面"] && Math.random() < 0.5 ? "面" : ""));
+    var q = { kind: "clue", type: "clue", c: p[0], wrongs: 0, done: false, autoSpeak: false, optHTML: true, optMap: {}, options: [], optCls: "emo scene" };
+    q.title = "龙珠雷达线索：读一读，龙珠在哪里？"; q.en = "Read the radar clue and find the ball";
+    var known = learnedSet(pr);
+    q.mainHTML = '<div class="clue" id="qTarget"><span class="radar">📡</span><span class="cluetext">' + readHTML(text, known) + "</span></div>";
+    var key = p[0] + "|" + pos, opts = [key];
+    // 干扰项：同一个地方的另一个位置（考「上/下」）+ 别的地方（考名词）
+    p[2].concat(p[0] === "车" ? [] : ["上", "下"]).forEach(function (o) { if (o !== pos && opts.length < 2 && CLUE_PLACES.some(function (cp) { return cp[0] === p[0] && cp[2].indexOf(o) !== -1; })) opts.push(p[0] + "|" + o); });
+    places.slice(1).forEach(function (o) { if (opts.length < 3) opts.push(o[0] + "|" + (o[2].indexOf(pos) !== -1 ? pos : o[2][0])); });
+    opts.forEach(function (o) { var a = o.split("|"), em = CLUE_PLACES.filter(function (cp) { return cp[0] === a[0]; })[0][1]; q.optMap[o] = sceneHTML(em, a[1]); });
+    q.options = shuffle(opts); q.answerKey = key;
+    q.speak = text; q.sayAnswer = text;
+    q.hintHTML = '<span class="py">' + tokenize(text).map(function (t) { return t.py; }).join(" ") + "</span>";
+    return q;
+  }
+
   /* ═══════════════ 字卡本 / 贴纸 ═══════════════ */
   function renderBook() {
     var little = prof.mode === "little";
@@ -1641,7 +1887,9 @@
     setStory('<div class="big">⚙️ 设置 · ' + esc(prof.name) + "</div>中文语音：" + (TTS.ok ? "✅ " + esc(TTS.voice.name) : "❌ 本设备没有中文语音（会改用拼音/图片提示）") +
       "\n英文语音：" + (TTS.enOk ? "✅ " + esc(TTS.enVoice.name) : "❌ 没有（英语题只显示文字）") +
       "\n已解锁 " + unlockedChars(prof).length + " 字 · 第 " + (prof.stage + 1) + " 阶 · 共修炼 " + prof.sessions + " 关" +
-      "\n数学题答对 " + prof.extra.math + " 次 · 英语题答对 " + prof.extra.eng + " 次");
+      "\n数学题答对 " + prof.extra.math + " 次 · 英语题答对 " + prof.extra.eng + " 次" +
+      "\n📚 读完小故事 " + Object.keys(prof.reads).length + " / " + READERS.length + " 本 · 雷达线索答对 " + (prof.extra.clue || 0) + " 次" +
+      (Object.keys(prof.readHelp).length ? "\n👆 读书时点过的字：" + esc(Object.keys(prof.readHelp).sort(function (a, b) { return prof.readHelp[b] - prof.readHelp[a]; }).slice(0, 20).join(" ")) : ""));
     addBtn("🔊 测试中文语音", function () { if (!TTS.say(["你好，小侠客！"].concat(charSpeech("大")))) toast("没有可用的中文语音"); }, { cls: "small" });
     addBtn("拼音提示：" + (prof.settings.pinyin ? "总是显示 ✅" : "点 💡 才显示"), function () { prof.settings.pinyin = !prof.settings.pinyin; saveStore(); renderSettings(); }, { cls: "small" });
     addBtn("模式：" + (prof.mode === "little" ? "🍼 启蒙模式（看图听音）" : "⚔️ 侠客模式") + " → 切换", function () {
@@ -1666,8 +1914,8 @@
     TTS.init();
     $("homeBtn").onclick = function () {
       SFX.click();
-      if ((session || duo || story) && !global.confirm("回到选人页？进度已自动保存。")) return;
-      session = null; duo = null; story = null; saveStore(); renderTitle();
+      if ((session || duo || story || reading) && !global.confirm("回到选人页？进度已自动保存。")) return;
+      session = null; duo = null; story = null; clearReadTimers(); reading = null; saveStore(); renderTitle();
     };
     $("settingsBtn").onclick = function () { SFX.click(); if (session || duo || story) { toast("先完成这一关再设置哦"); return; } renderSettings(); };
     $("soundBtn").onclick = function () {
@@ -1685,6 +1933,8 @@
     makeQuestion: function (mode, c, type) { var pr = newProfile("t", mode, "🧒", "#000"); return makeQuestion(pr, c, type); },
     makeExtra: function (mode, kind, stage) { var pr = newProfile("t", mode, "🧒", "#000"); pr.stage = stage || 0; return makeExtra(pr, kind); },
     english: ENGLISH, charSpeech: charSpeech,
+    readers: function () { return READERS.map(function (st) { return { id: st.id, chars: STORY_CHARS[st.id] }; }); },
+    makeClue: function (chars) { var pr = newProfile("t", "hero", "🧒", "#000"); chars.split("").forEach(function (c) { pr.srs[c] = { b: 2, due: 0, seen: 1, ok: 1, bad: 0 }; }); return makeClue(pr); },
     tts: TTS
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();

@@ -1,4 +1,4 @@
-/* 小侠客汉字龙珠 v4 · 漫画风（橙/蓝/黄），所有图形为原创 CSS/SVG */
+/* 小侠客汉字龙珠 v7 · 漫画风（橙/蓝/黄），所有图形为原创 CSS/SVG */
 :root{
   --orange:#ff8a00; --orange2:#ff5e00; --blue:#1e5bd8; --blue2:#0d3a99; --yellow:#ffd400;
   --ink:#141414; --paper:#fffaf0; --red:#e3262f; --green:#21a35b; --sky1:#4fb7ff; --sky2:#c9ecff;
@@ -245,3 +245,36 @@ button{font-family:inherit;color:inherit}
 .slotrow .slotinfo small{display:block;font-weight:700;color:#555}
 .filepick{display:flex;align-items:center;justify-content:center;gap:8px;min-height:62px;border:3px dashed var(--ink);border-radius:16px;background:#fff7e0;font-weight:900;cursor:pointer}
 .filepick input{position:absolute;width:1px;height:1px;opacity:0}
+
+/* ── v7 主动阅读（v5 阅读功能合并） ── */
+.rc{display:inline-block;position:relative;cursor:pointer;padding:0 1px;border-radius:6px;-webkit-tap-highlight-color:transparent;font-size:1.5rem;line-height:2.1}
+.rc:active{background:#ffe08a}
+.rc.tapped{background:#fff3c4;box-shadow:inset 0 -3px 0 #ffb300}
+.rc.unk{color:#1565c0}
+.rc ruby rt{font-size:.62rem;color:#c62828;font-weight:700}
+.rpop{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);background:var(--ink,#222);color:#fff;font-size:1rem;padding:2px 8px;border-radius:10px;white-space:nowrap;z-index:5;animation:rpop .2s ease-out;pointer-events:none}
+@keyframes rpop{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+.reader{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.rrow{display:flex;gap:8px;align-items:flex-start;background:#fff;border:3px solid var(--ink,#222);border-radius:16px;padding:6px 10px;box-shadow:3px 3px 0 var(--ink,#222)}
+.rwho{flex:0 0 46px;display:flex;justify-content:center}
+.rline{flex:1;text-align:left}
+.rsay{margin-top:4px;min-height:44px}
+.rtip{text-align:center;font-size:1rem;margin-top:8px;opacity:.85}
+.shelf{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.book-btn{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:120px;padding:10px 6px;background:#fffdf3}
+.book-btn .bk-ic{font-size:2.4rem}
+.book-btn b{font-size:1.15rem}
+.book-btn b .rc{font-size:1.15rem;line-height:1.6}
+.book-btn small{font-size:.8rem;opacity:.8}
+.book-btn.fresh{background:#fff1b8}
+.book-btn.locked{opacity:.55;filter:grayscale(.6)}
+.clue{display:flex;align-items:center;justify-content:center;gap:8px;background:#e3f2fd;border:3px dashed #1565c0;border-radius:16px;padding:10px;margin:8px 0}
+.clue .radar{font-size:2rem}
+.clue .rc{font-size:2.2rem}
+.scn{display:inline-flex;flex-direction:column;align-items:center;line-height:1}
+.scn.row{flex-direction:row;gap:4px}
+.scn .sb{height:32px;display:flex;align-items:center}
+.scn .spl{font-size:2.6rem;position:relative}
+.scn .sin{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.7)}
+.btn.opt.scene{min-height:120px}
+.qtitle .rc{font-size:1.3rem;line-height:1.9}
