@@ -53,7 +53,7 @@ def main():
         for t in miss[:50]: print("  MISSING:", t)
         sys.exit(1 if miss else 0)
     import edge_tts
-    sil = os.path.join(AUD, "_silence.mp3")
+    sil = os.path.join(AUD, "silence.mp3")
     if not os.path.exists(sil):
         subprocess.check_call(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t", "0.2", "-b:a", "16k", sil])
     async def run():
@@ -62,7 +62,7 @@ def main():
         return [t for t, ok in zip(ts, res) if not ok]
     failed = asyncio.run(run())
     m = write_manifest(ts)
-    keep = set(v + ".mp3" for v in m.values()) | {"manifest.js", "_silence.mp3"}
+    keep = set(v + ".mp3" for v in m.values()) | {"manifest.js", "silence.mp3"}
     for f in os.listdir(AUD):
         if f not in keep: os.unlink(os.path.join(AUD, f))
     print("texts %d · recorded %d · failed %d" % (len(ts), len(m), len(failed)))

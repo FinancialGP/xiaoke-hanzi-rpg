@@ -87,14 +87,15 @@
       if (!this.el && typeof global.Audio === "function") { this.el = new global.Audio(); this.el.preload = "auto"; }
       return this.el;
     },
-    unlock: function () { var a = this.audio(); if (!a || this.unlocked) return; this.unlocked = true; try { a.muted = true; a.src = this.base + "_silence.mp3"; var p = a.play(); if (p && p.then) p.then(function () { a.pause(); a.muted = false; }, function () { a.muted = false; }); else a.muted = false; } catch (e) { a.muted = false; } },
+    unlock: function () { var a = this.audio(); if (!a || this.unlocked) return; this.unlocked = true; try { a.muted = true; a.src = this.base + "silence.mp3"; var p = a.play(); if (p && p.then) p.then(function () { a.pause(); a.muted = false; }, function () { a.muted = false; }); else a.muted = false; } catch (e) { a.muted = false; } },
     setRate: function (r) { this.rate = r === 0.75 ? 0.75 : 1; try { localStorage.setItem(RATE_KEY, String(this.rate)); } catch (e) { /* */ } if (this.el) this.el.playbackRate = this.rate; if (this.onRate) this.onRate(); },
     play: function (t, done) {
       var a = this.audio(), job = this.job, fired = false;
       var fin = function () { if (fired) return; fired = true; if (VOICE.job === job) done(); };
       if (!a) return fin();
-      a.onended = fin; a.onerror = function () { VOICE.miss(t); fin(); };
-      a.muted = false; a.src = this.base + this.map[String(t)] + ".mp3";
+      var url = this.base + this.map[String(t)] + ".mp3";
+      a.onended = fin; a.onerror = function () { if (String(a.src).indexOf(url) < 0) return; VOICE.miss(t); fin(); };
+      a.muted = false; a.src = url;
       a.preservesPitch = true; a.webkitPreservesPitch = true; a.mozPreservesPitch = true;
       a.defaultPlaybackRate = this.rate; a.playbackRate = this.rate;
       this.plays.push(String(t));
