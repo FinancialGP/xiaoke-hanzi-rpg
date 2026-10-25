@@ -319,3 +319,13 @@ button{font-family:inherit;color:inherit}
 .schint mark{background:#ffe066;padding:2px 4px;border-radius:6px;font-weight:700}
 .schint.flash{animation:schflash 1s ease}
 @keyframes schflash{0%{box-shadow:0 0 0 4px #ffb300}100%{box-shadow:0 0 0 0 transparent}}
+
+/* v7.7 剧情插图 */
+.sceneart{margin:4px auto 8px;max-width:520px;border-radius:14px;overflow:hidden;background:#fff6e0;aspect-ratio:4/3;max-height:34vh;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:zoom-in}
+.sceneart img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .5s}
+.sceneart img.on{opacity:1}
+.sceneart.little{max-height:38vh}
+@media (min-width:700px){.sceneart{max-height:40vh}}
+.artzoom{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .25s;cursor:zoom-out}
+.artzoom.on{opacity:1}
+.artzoom img{max-width:96vw;max-height:92vh;border-radius:12px}

@@ -1975,11 +1975,25 @@
     if (story.phase === "outro") return finishChapter();
   }
   function plainText(t) { return t.replace(/[～…]/g, "，"); }
+  /* v7.7 剧情插图：img/scenes/chNN{i|o}.webp，只在对话画面显示（答题页不显示，避免泄露「谁」的答案） */
+  function sceneArtSrc(i, ph) { return "img/scenes/ch" + (i < 9 ? "0" : "") + (i + 1) + ph + ".webp?v=7.7"; }
+  function sceneArtHTML() {
+    if (!story || (story.phase !== "intro" && story.phase !== "outro") || story.i >= 25) return "";
+    var src = sceneArtSrc(story.i, story.phase === "intro" ? "i" : "o");
+    return '<div class="sceneart' + (prof && prof.mode === "little" ? " little" : "") + '"><img loading="lazy" decoding="async" alt="故事插图" src="' + src +
+      '" onload="this.classList.add(\'on\')" onerror="this.parentNode.style.display=\'none\'" onclick="window.__zoomArt&&__zoomArt(this.src)"></div>';
+  }
+  global.__zoomArt = function (src) {
+    var o = document.createElement("div"); o.className = "artzoom";
+    o.innerHTML = '<img alt="故事插图（放大）" src="' + src + '">';
+    o.onclick = function () { o.classList.remove("on"); setTimeout(function () { o.remove(); }, 250); };
+    document.body.appendChild(o); requestAnimationFrame(function () { o.classList.add("on"); });
+  };
   function showStoryScene(sc) {
     var who = CAST[sc[0]] || CAST.narr, text = sc[1];
     var selfRead = prof.mode !== "little";   // v5：侠客模式先自己读、点字求助；启蒙模式照旧朗读
     hideQuiz(); showScene(true); renderHUD();
-    setStory('<div class="storyhead">' + esc(story.ch.icon + " " + story.ch.title) + " · " + esc(story.ch.place) + "</div>" +
+    setStory('<div class="storyhead">' + esc(story.ch.icon + " " + story.ch.title) + " · " + esc(story.ch.place) + "</div>" + sceneArtHTML() +
       '<div class="bubble"><div class="spk">' + portraitHTML(sc[0], 96) + '<div class="spkname">' + esc(who.name) + "</div></div>" +
       '<div class="say">' + (selfRead ? readLineHTML(text, learnedSet(prof), 0) : esc(text)) + "</div></div>" + (selfRead ? '<div class="rtip">👆 先自己读，不会的字点一下</div>' : ""));
     clearMenu();
@@ -2582,7 +2596,7 @@
     renderTitle();
   }
   // 测试钩子（只读状态 + 少量操作，便于自动化测试）
-  global.__xiaoke = {
+  global.__xiaoke = { sceneArtSrc: sceneArtSrc,
     play: function (i) { playChapter(i); }, playOutro: function (i) { playChapter(i); story.phase = "outro"; story.scene = 0; story.quizDone.i = 1; storyStep(); }, sceneQs: function (i, ph) { return sceneQs(i, ph); }, sceneQuiz: function () { return global.SCENE_QUIZ; }, cast: CAST, story: function () { return story && { i: story.i, phase: story.phase, scene: story.scene, qi: story.qi, quizDone: story.quizDone }; },
     state: function () { return { hp: hp && { cur: hp.cur, max: hp.max, missed: hp.missed.slice() }, screen: screen, store: store, prof: prof && prof.id, q: curQ && { c: curQ.c, kind: curQ.kind || null, type: curQ.type, answerKey: curQ.answerKey, options: curQ.options, answer: curQ.answer, title: curQ.title, en: curQ.en, item: curQ.item || null, wrongs: curQ.wrongs, speak: curQ.speak, hintSay: curQ.hintSay }, session: session && { idx: session.idx, balls: session.balls, len: session.queue.length, only: session.only }, story: story && { i: story.i, phase: story.phase, match: story.match } }; },
     makeQuestion: function (mode, c, type) { var pr = newProfile("t", mode, "🧒", "#000"); return makeQuestion(pr, c, type); },
