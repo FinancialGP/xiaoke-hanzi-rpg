@@ -83,23 +83,24 @@
     map: (typeof AUDIO_MANIFEST !== "undefined" && AUDIO_MANIFEST) || {}, base: "audio/",
     el: null, job: null, misses: [], plays: [], n: (typeof AUDIO_MANIFEST !== "undefined" && AUDIO_MANIFEST) ? Object.keys(AUDIO_MANIFEST).length : 0,
     rate: (function () { try { return +localStorage.getItem(RATE_KEY) === 0.75 ? 0.75 : 1; } catch (e) { return 1; } })(),
-    has: function (t) { return Object.prototype.hasOwnProperty.call(this.map, String(t)); },
+    vmap: (typeof AUDIO_VOICES !== "undefined" && AUDIO_VOICES) || {},   // v7.8 男声：{ boy|man|elder: {文字: hash} }
+    has: function (t, v) { var m = v ? this.vmap[v] : this.map; return !!m && Object.prototype.hasOwnProperty.call(m, String(t)); },
     audio: function () {
       if (!this.el && typeof global.Audio === "function") { this.el = new global.Audio(); this.el.preload = "auto"; }
       return this.el;
     },
     unlock: function () { var a = this.audio(); if (!a || this.unlocked) return; this.unlocked = true; try { a.muted = true; a.src = this.base + "silence.mp3"; var p = a.play(); if (p && p.then) p.then(function () { a.pause(); a.muted = false; }, function () { a.muted = false; }); else a.muted = false; } catch (e) { a.muted = false; } },
     setRate: function (r) { this.rate = r === 0.75 ? 0.75 : 1; try { localStorage.setItem(RATE_KEY, String(this.rate)); } catch (e) { /* */ } if (this.el) this.el.playbackRate = this.rate; if (this.onRate) this.onRate(); },
-    play: function (t, done) {
+    play: function (t, done, v) {
       var a = this.audio(), job = this.job, fired = false;
       var fin = function () { if (fired) return; fired = true; if (VOICE.job === job) done(); };
       if (!a) return fin();
-      var url = this.base + this.map[String(t)] + ".mp3";
+      var url = this.base + (v && this.has(t, v) ? this.vmap[v] : this.map)[String(t)] + ".mp3";
       a.onended = fin; a.onerror = function () { if (String(a.src).indexOf(url) < 0) return; VOICE.miss(t); fin(); };
       a.muted = false; a.src = url;
       a.preservesPitch = true; a.webkitPreservesPitch = true; a.mozPreservesPitch = true;
       a.defaultPlaybackRate = this.rate; a.playbackRate = this.rate;
-      this.plays.push(String(t));
+      this.plays.push(String(t)); this.lastVoice = (v && this.has(t, v)) ? v : ""; this.lastUrl = url;
       try { var p = a.play(); if (p && p.catch) p.catch(function () { fin(); }); } catch (e) { fin(); }
     },
     stop: function () {
@@ -125,6 +126,8 @@
           vs.filter(function (v) { return /^(zh|cmn)/i.test(v.lang); })[0] || null;
         self.enVoice = vs.filter(function (v) { return /^en[-_]?(US|GB|NZ|AU)/i.test(v.lang); })[0] ||
           vs.filter(function (v) { return /^en/i.test(v.lang); })[0] || null;
+        var zh = vs.filter(function (v) { return /^(zh|cmn)/i.test(v.lang); });
+        self.maleVoice = zh.filter(function (v) { return /yun|male|男|kangkang|li-mu|liang|han/i.test(v.name) && !/female|女/i.test(v.name); })[0] || null;
         self.ok = !!self.voice; self.enOk = !!self.enVoice;
         updateWho();
       };
@@ -132,23 +135,25 @@
       try { global.speechSynthesis.addEventListener("voiceschanged", pickVoice); } catch (e) { global.speechSynthesis.onvoiceschanged = pickVoice; }
     },
     /** text 可以是字符串，也可以是数组（逐句朗读）。v7.2：优先播放预先录好的 AI 人声（audio/），没录到的那一段才用手机朗读 */
-    speak: function (voice, text, rate) {
+    speak: function (voice, text, rate, sv) {
       if (!soundOn || !text || !text.length) return false;
       var parts = [].concat(text).filter(function (t) { return t && String(t).length; });
       if (!parts.length) return false;
-      var canClip = VOICE.has(parts[0]) || parts.some(function (t) { return VOICE.has(t); });
+      var hasC = function (t) { return (sv && VOICE.has(t, sv)) || VOICE.has(t); };
+      var canClip = parts.some(hasC);
       if (!canClip && !voice) return false;
       VOICE.stop();
       var job = VOICE.job = {}, i = 0, self = this;
       var next = function () {
         if (VOICE.job !== job || i >= parts.length) return;
         var t = parts[i++];
-        if (VOICE.has(t)) { VOICE.play(t, next); return; }
+        if (hasC(t)) { VOICE.play(t, next, sv); return; }
         VOICE.miss(t);
         if (!voice) return next();
         try {
           var u = new global.SpeechSynthesisUtterance(t);
           u.voice = voice; u.lang = voice.lang; u.rate = (rate || SPEECH_RATE) * VOICE.rate; u.pitch = 1.1;
+          if (sv && voice === self.voice) u.pitch = sv === "boy" ? 1.0 : 0.7;   // 没有男声时，把女声压低一点
           u.onend = next; u.onerror = next;
           global.speechSynthesis.speak(u);
         } catch (e) { next(); }
@@ -157,6 +162,8 @@
       return true;
     },
     say: function (text, rate) { return this.speak(this.voice, text, rate); },
+    /** v7.8 剧情台词：男孩/男人/老人用男声录音；手机朗读时优先用系统男声 */
+    sayAs: function (sv, text, rate) { return this.speak(sv && sv !== "boy" && this.maleVoice ? this.maleVoice : this.voice, text, rate, sv); },
     sayEn: function (text, rate) { if (!this.enOk || !soundOn) return false; VOICE.stop(); try { var u = new global.SpeechSynthesisUtterance(text); u.voice = this.enVoice; u.lang = this.enVoice.lang; u.rate = (rate || 0.7) * VOICE.rate; global.speechSynthesis.speak(u); return true; } catch (e) { return false; } }
   };
   /** 单字朗读：先读字，停一下，再在词里读一次（如「大」→「大，大小的大」） */
@@ -1729,6 +1736,16 @@
     ginyu: { name: "基纽", emoji: "💜" }, jeice: { name: "吉斯", emoji: "🔥" }, burter: { name: "巴特", emoji: "💨" },
     recoome: { name: "利库姆", emoji: "🦍" }, guldo: { name: "古尔多", emoji: "🐸" }, porunga: { name: "波伦加", emoji: "🐲" }
   };
+  // v7.8 谁用什么声音：女生和旁白 = 晓晓（默认）；boy = 云夏（男孩）；man = 云希（年轻男生）；elder = 云扬（老爷爷/大坏蛋）
+  var SPEAKER_VOICE = {
+    goku: "boy", krillin: "boy", gohan: "boy", chiaotzu: "boy", dende: "boy", puar: "boy",
+    yamcha: "man", tien: "man", oolong: "man", blue: "man", tao: "man", korin: "man", popo: "man", piccolo: "man", raditz: "man",
+    kaio: "man", gregory: "man", saibaman: "man", vegeta: "man", nail: "man", zarbon: "man", frieza: "man",
+    ginyu: "man", jeice: "man", burter: "man", guldo: "man",
+    roshi: "elder", oxking: "elder", demon: "elder", kami: "elder", elder: "elder", nappa: "elder", dodoria: "elder", recoome: "elder", porunga: "elder"
+  };
+  var GROWN_FROM = 12;   // 第十三章「三年过去了」起，悟空和库林长大了，换成大哥哥的声音
+  function speakerVoice(k, chi) { var v = SPEAKER_VOICE[k] || ""; if (v === "boy" && (k === "goku" || k === "krillin") && chi >= GROWN_FROM) v = "man"; return v; }
   function portraitHTML(key, size) {
     size = size || 80;
     if (AVATAR_INFO[key]) return avatarSVG(key, size);
@@ -1976,7 +1993,7 @@
   }
   function plainText(t) { return t.replace(/[～…]/g, "，"); }
   /* v7.7 剧情插图：img/scenes/chNN{i|o}.webp，只在对话画面显示（答题页不显示，避免泄露「谁」的答案） */
-  function sceneArtSrc(i, ph) { return "img/scenes/ch" + (i < 9 ? "0" : "") + (i + 1) + ph + ".webp?v=7.7"; }
+  function sceneArtSrc(i, ph) { return "img/scenes/ch" + (i < 9 ? "0" : "") + (i + 1) + ph + ".webp?v=7.8"; }
   function sceneArtHTML() {
     if (!story || (story.phase !== "intro" && story.phase !== "outro") || story.i >= 25) return "";
     var src = sceneArtSrc(story.i, story.phase === "intro" ? "i" : "o");
@@ -1990,7 +2007,7 @@
     document.body.appendChild(o); requestAnimationFrame(function () { o.classList.add("on"); });
   };
   function showStoryScene(sc) {
-    var who = CAST[sc[0]] || CAST.narr, text = sc[1];
+    var who = CAST[sc[0]] || CAST.narr, text = sc[1], sv = speakerVoice(sc[0], story.i);
     var selfRead = prof.mode !== "little";   // v5：侠客模式先自己读、点字求助；启蒙模式照旧朗读
     hideQuiz(); showScene(true); renderHUD();
     setStory('<div class="storyhead">' + esc(story.ch.icon + " " + story.ch.title) + " · " + esc(story.ch.place) + "</div>" + sceneArtHTML() +
@@ -1999,10 +2016,10 @@
     clearMenu();
     var tm = [];
     addBtn('<span style="font-size:1.8rem">👉</span> 继续', function () { tm.forEach(clearTimeout); story.scene++; storyStep(); }, { cls: "primary" });
-    if (selfRead) { bindReading($("story"), prof); tm = armLineHelp($("story"), [text]); }
-    else addBtn("🔊 再听一次", function () { TTS.say(plainText(text), 0.7); }, { cls: "small blue" });
+    if (selfRead) { bindReading($("story"), prof); tm = armLineHelp($("story"), [text], [sv]); }
+    else addBtn("🔊 再听一次", function () { TTS.sayAs(sv, plainText(text), 0.7); }, { cls: "small blue" });
     addBtn("⏸ 回故事目录", function () { tm.forEach(clearTimeout); renderStoryMap(); }, { cls: "small" });
-    if (!selfRead) setTimeout(function () { TTS.say(plainText(text), 0.7); }, 200);
+    if (!selfRead) setTimeout(function () { TTS.sayAs(sv, plainText(text), 0.7); }, 200);
     scrollTop();
   }
   /* ═══════════════ v7.6 剧情对话后的理解小问题（题目在 scene_quiz.js） ═══════════════ */
@@ -2369,14 +2386,14 @@
     return '<div class="rline" data-i="' + idx + '"><div class="rtext">' + readHTML(text, known) + '</div>' +
       '<button class="btn small blue rsay hidden" type="button" data-i="' + idx + '">🔊 整句读给我听</button></div>';
   }
-  function armLineHelp(root, texts) {
+  function armLineHelp(root, texts, voices) {
     var timers = [];
     root.querySelectorAll(".rline").forEach(function (ln) {
       var b = ln.querySelector(".rsay"), i = +ln.dataset.i;
       var show = function () { b.classList.remove("hidden"); };
       timers.push(setTimeout(show, READ_HINT_DELAY));
       ln.querySelectorAll(".rc").forEach(function (sp) { sp.addEventListener("click", show); });
-      b.addEventListener("click", function () { SFX.click(); TTS.say(plainText(texts[i]), 0.7); });
+      b.addEventListener("click", function () { SFX.click(); TTS.sayAs((voices || [])[i], plainText(texts[i]), 0.7); });
     });
     return timers;
   }
@@ -2421,7 +2438,7 @@
     setStory(html);
     var root = $("story");
     bindReading(root, prof, function () { reading.taps++; });
-    reading.timers = armLineHelp(root, texts);
+    reading.timers = armLineHelp(root, texts, st.lines.map(function (l) { return speakerVoice(l[0], 0); }));
     addBtn("✅ 我读完了！回答问题", function () { clearReadTimers(); askComprehension(st, 0, 0); }, { cls: "primary" });
     addBtn("📚 回书架", function () { clearReadTimers(); renderShelf(); }, { cls: "small" });
     scrollTop();
@@ -2609,6 +2626,15 @@
     radicals: RADICALS, builds: BUILDS,
     voice: VOICE,
     /** 列出游戏里所有可能读出来的中文（scripts/gen_audio.js 用它生成录音，并检查覆盖率） */
+    /** v7.8 要用男声录的台词：{ boy: [...], man: [...], elder: [...] } */
+    voiced: function () {
+      var out = {}, add = function (v, t) { if (!v) return; (out[v] = out[v] || {})[plainText(t)] = 1; };
+      STORY.forEach(function (ch, i) { (ch.intro || []).concat(ch.outro || []).forEach(function (sc) { add(speakerVoice(sc[0], i), sc[1]); }); });
+      READERS.forEach(function (st) { st.lines.forEach(function (l) { add(speakerVoice(l[0], 0), l[1]); }); });
+      Object.keys(out).forEach(function (v) { out[v] = Object.keys(out[v]); });
+      return out;
+    },
+    speakerVoice: speakerVoice,
     speakables: function () {
       var out = {}, add = function (t) { [].concat(t).forEach(function (x) { if (x != null && String(x).length) out[String(x)] = 1; }); };
       var addText = function (t) { add(t); add(plainText(t)); tokenize(t).forEach(function (k) { if (k.han || isHan(k.ch)) add(k.ch); if (k.word) add(k.word); }); };

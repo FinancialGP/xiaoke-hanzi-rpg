@@ -5,4 +5,4 @@ const w = { document: { readyState: "loading", addEventListener() {}, getElement
   localStorage: { getItem() { return null; }, setItem() {} }, navigator: { userAgent: "" }, setTimeout, console };
 w.window = w; vm.createContext(w);
 for (const f of ["hanzi_data.js", "words2.js", "stories.js", "scene_quiz.js", "game.js"]) vm.runInContext(fs.readFileSync(path.join(root, f), "utf8"), w, { filename: f });
-process.stdout.write(JSON.stringify(w.__xiaoke.speakables()));
+process.stdout.write(JSON.stringify(process.argv[2] === "--voiced" ? w.__xiaoke.voiced() : w.__xiaoke.speakables()));
