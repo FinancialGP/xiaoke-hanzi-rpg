@@ -68,15 +68,20 @@
     stop: function () { this.job++; if (this.el) try { this.el.onended = null; this.el.onerror = null; this.el.pause(); } catch (e) { /* */ } try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* */ } },
     say: function (lang, text) { this.stop(); if (!text) return; var parts = this.parts(lang, text); if (!parts) return this.synth(lang, text);
       var job = this.job, self = this, i = 0, a = this.audio(); if (!a) return this.synth(lang, text);
-      var next = function () { if (self.job !== job || i >= parts.length) return; var t = parts[i++], url = self.base + lang + "/" + KA[lang][t] + ".mp3";
+      var next = function () { if (self.job === job && i >= parts.length) self.doneJob = job; if (self.job !== job || i >= parts.length) return; var t = parts[i++], url = self.base + lang + "/" + KA[lang][t] + ".mp3";
         a.onended = next; a.onerror = function () { if (String(a.src).indexOf(url) < 0 || self.job !== job) return; self.misses.push(t); self.synth(lang, parts.slice(i - 1).join(lang === "en" ? " " : "")); };
         a.muted = false; a.src = url; a.preservesPitch = true; a.webkitPreservesPitch = true; a.mozPreservesPitch = true; a.defaultPlaybackRate = self.rate; a.playbackRate = self.rate;
         self.plays.push(lang + ":" + t); try { var p = a.play(); if (p && p.catch) p.catch(function () { /* 自动播放被拦：等下一次点击 */ }); } catch (e) { /* */ } };
       next(); },
+    /** v7.9：还在说话吗（录音或设备朗读） */
+    busy: function () { var sp = false; try { sp = !!(global.speechSynthesis && speechSynthesis.speaking); } catch (e) { /* */ } return (this.doneJob !== this.job && this.el && !this.el.paused) || sp; },
     synth: function (lang, text) { this.fallbacks.push(lang + ":" + text); if (!global.speechSynthesis) return;
       try { var u = new SpeechSynthesisUtterance(text), v = TTS.voice(lang); u.lang = lang === "en" ? (v ? v.lang : "en-NZ") : "zh-CN"; if (v) u.voice = v; u.rate = this.rate; speechSynthesis.speak(u); } catch (e) { /* */ } }
   };
   /** 和 scripts/list_speakables.js 用同一套切分：数字单独成段，其余文字去掉首尾空格 */
+  /** v7.9：等语音说完再继续（至少 minMs，最多 maxMs，慢速按比例放宽） */
+  function afterVoice(fn, minMs, maxMs) { var t0 = now(), cap = (maxMs || 6000) / (VOICE.rate || 1);
+    setTimeout(function poll() { if (VOICE.busy() && now() - t0 < cap) return setTimeout(poll, 100); setTimeout(fn, 250); }, minMs || 0); }
   function splitSay(t) { return String(t).split(/(\d+)/).map(function (x) { return x.trim(); }).filter(function (x) { return x && !/^[\s,.，。、:：;；!?！？]+$/.test(x); }); }
   var TTS = {
     ok: !!global.speechSynthesis,
@@ -528,7 +533,7 @@
   function speakQ() { if (R && R.q) TTS.say(R.q.sayZh || R.q.zh, R.q.sayEn || R.q.en); }
   function drawClock() { var c = $("clk"); if (c) c.innerHTML = clockSVG(R.ch, R.cm) + '<div style="font-weight:800">' + esc(tStr(R.ch, R.cm)[LANG === "en" ? 1 : 0]) + "</div>"; }
   function drawWallet() { var w = $("wallet"), s = R.wallet.reduce(function (a, b) { return a + b; }, 0); if (w) w.innerHTML = '<div>👛 ' + T("钱包 wallet：", "Wallet: ") + '<b>' + fmtMoney(s) + "</b></div>" + R.wallet.map(function (c) { return '<span style="display:inline-block;transform:scale(.7)">' + moneySVG(c) + "</span>"; }).join(""); }
-  function showHint() { var hn = $("hint"); if (!hn || !R) return; hn.innerHTML = "💡 " + (LANG === "en" ? R.q.he : R.q.hint); enify(hn); hn.classList.remove("hidden"); TTS.say(R.q.sayHint || "看看提示", R.q.she); }
+  function showHint(quiet) { var hn = $("hint"); if (!hn || !R) return; hn.innerHTML = "💡 " + (LANG === "en" ? R.q.he : R.q.hint); enify(hn); hn.classList.remove("hidden"); if (!quiet) TTS.say(R.q.sayHint || "看看提示", R.q.she); }
   function answer(k, btn) {
     if (!R || R.locked || R.done) return; var q = R.q;
     if (k === q.ans) {
@@ -538,19 +543,19 @@
       if (R.wrong === 0) { R.first++; R.badQ = 0; R.streak = quick ? R.streak + 1 : 0;
         if (R.streak >= 3 && R.d < 2) { R.d++; R.streak = 0; toast(T("🚀 你好快！题目变难一点 Level up!", "🚀 So fast! Level up!")); } }
       else { R.streak = 0; R.badQ++; if (R.badQ >= 2 && R.d > 0) { R.d--; R.badQ = 0; toast(T("🌱 我们先练简单一点的", "🌱 Let's practise some easier ones")); } }
-      setTimeout(function () { if (R) { R.i++; nextQ(); } }, 1100); return;
+      var r0 = R; afterVoice(function () { if (R && R === r0 && R.q === q) { R.i++; nextQ(); } }, 1100, 6000); return;
     }
     R.wrong++; SFX.bad();
     if (R.wrong === 1 && !q.practice && !q._redo && R.i + 3 < ROUND_LEN) { q._redo = 1; R.redo.push({ q: q, at: R.i + 3 }); } var r = pick(RETRY); $("cheer").textContent = "🤗 " + T(r[0], r[1]); TTS.say(r[0], r[1]);
     if (btn) { btn.classList.add("bad"); btn.disabled = true; }
-    if (R.wrong >= 1) showHint();
+    if (R.wrong >= 1) { var hq = q; showHint(true); afterVoice(function () { if (R && R.q === hq && !R.done && !R.locked) TTS.say(hq.sayHint || "看看提示", hq.she); }, 0, 4000); }
     if (R.wrong >= 2) {
       if (q.kind === "choice") { var g = main.querySelector('.opt[data-k="' + q.ans.replace(/"/g, '\\"') + '"]'); if (g) g.classList.add("glow"); }
       else if (R.wrong >= 3) { // 拨钟/凑钱：第三次时示范正确答案
         R.locked = true;
         if (q.kind === "clock") { R.ch = q.target[0]; R.cm = q.target[1]; drawClock(); } else { var rem = q.target; R.wallet = []; q.pool.slice().sort(function (a, b) { return b - a; }).forEach(function (c) { while (rem >= c) { R.wallet.push(c); rem -= c; } }); drawWallet(); }
         $("cheer").textContent = T("👀 看，这样就对了！ This is how.", "👀 Look, this is how."); TTS.say("看，这样就对了", "Look, this is how"); R.streak = 0; R.badQ++; if (R.badQ >= 2 && R.d > 0) { R.d--; R.badQ = 0; }
-        setTimeout(function () { if (R) { R.i++; nextQ(); } }, 2600);
+        var r1 = R; afterVoice(function () { if (R && R === r1 && R.q === q) { R.i++; nextQ(); } }, 2600, 7000);
       }
     }
   }

@@ -108,8 +108,18 @@
       if (this.el) { try { this.el.pause(); this.el.onended = null; this.el.onerror = null; } catch (e) { /* */ } }
       try { if (global.speechSynthesis) global.speechSynthesis.cancel(); } catch (e) { /* */ }
     },
-    miss: function (t) { this.misses.push(String(t)); }
+    miss: function (t) { this.misses.push(String(t)); },
+    /** v7.9：现在是否还在说话（录音或手机朗读） */
+    busy: function () { var sp = false; try { sp = !!(global.speechSynthesis && global.speechSynthesis.speaking); } catch (e) { /* */ } return !!(this.job && !this.job.done) || sp; }
   };
+  /** v7.9：等表扬/提示语音说完再继续（至少 minMs；最多 maxMs，慢速时按比例放宽） */
+  function afterVoice(fn, minMs, maxMs) {
+    var t0 = Date.now(), cap = (maxMs || 6000) / (VOICE.rate || 1);
+    setTimeout(function poll() {
+      if (VOICE.busy() && Date.now() - t0 < cap) return setTimeout(poll, 100);
+      setTimeout(fn, 250);
+    }, minMs || 0);
+  }
   function zhVoice() { return TTS.ok || VOICE.n > 0; }
   /* ═══════════════ 语音（speechSynthesis）：中文为主，英语题用英文语音 ═══════════════ */
   var SPEECH_RATE = 0.65;          // 放慢语速，适合小朋友
@@ -145,6 +155,7 @@
       VOICE.stop();
       var job = VOICE.job = {}, i = 0, self = this;
       var next = function () {
+        if (VOICE.job === job && i >= parts.length) job.done = true;
         if (VOICE.job !== job || i >= parts.length) return;
         var t = parts[i++];
         if (hasC(t)) { VOICE.play(t, next, sv); return; }
@@ -1180,7 +1191,7 @@
       sayAnswer(q);
       var line = $("hintLine");
       if (line) line.innerHTML = (q.wrongs === 0 ? "✨ 太棒了！ " : "👍 对啦！ ") + (q.kind === "read" ? "" : q.kind ? q.hintHTML : charHint(q.c));
-      setTimeout(function () { if (ctx.onDone) ctx.onDone(q.wrongs === 0, b, q); }, q.wrongs === 0 ? 1300 : 1700);
+      afterVoice(function () { if (curQ === q && ctx.onDone) ctx.onDone(q.wrongs === 0, b, q); }, q.wrongs === 0 ? 1300 : 1700, 6000);
     } else {
       q.wrongs++;
       b.disabled = true; b.classList.add("wrong");
@@ -2073,7 +2084,7 @@
         var hit = battle && hp && qq.wrongs === 1 && hp.cur > 1;   // 温和：后面有战斗才扣，每题最多 1 颗，永远不会扣到 0
         if (hit) hpHit(qq);
         var l = document.querySelector("#hintLine .schint"); if (l) { l.classList.remove("flash"); void l.offsetWidth; l.classList.add("flash"); }
-        setTimeout(function () { if (curQ === qq && !qq.done) TTS.say(qq.hintSay); }, hit ? 1900 : 400);
+        afterVoice(function () { if (curQ === qq && !qq.done) TTS.say(qq.hintSay); }, hit ? 900 : 300, 4000);
       },
       onDone: function (first) { if (first) story.qFirst++; gainExp(prof, first ? 5 : 2); saveStore(); setTimeout(function () { if (story && story.qTok === tok && screen === "story") askScene(ph, qi + 1); }, 300); }
     });
@@ -2624,7 +2635,7 @@
     tts: TTS,
     makeSkill: function (mode, kind, type, lv, chars) { var pr = newProfile("t", mode, "🧒", "#000"); pr.pinyin.lv = lv || 0; (chars || "").split("").forEach(function (c) { pr.srs[c] = { b: 2, due: 0, seen: 1, ok: 1, bad: 0 }; }); return kind === "py" ? makePinyin(pr, type) : makeRadical(pr, type); },
     radicals: RADICALS, builds: BUILDS,
-    voice: VOICE,
+    voice: VOICE, afterVoice: afterVoice,
     /** 列出游戏里所有可能读出来的中文（scripts/gen_audio.js 用它生成录音，并检查覆盖率） */
     /** v7.8 要用男声录的台词：{ boy: [...], man: [...], elder: [...] } */
     voiced: function () {
