@@ -1398,7 +1398,7 @@
           if (pr.pinyin.up) { delete pr.pinyin.up; addLog("🎉 拼音升级：开始学「" + PY_LEVELS[pr.pinyin.lv].name + "」！", "good"); }
           if (!first && !item.retry && session.queue.length < SESSION_LEN + 3) session.queue.splice(Math.min(session.queue.length, session.idx + 3), 0, { skill: item.skill, retry: true });
         } else if (item.clue) { if (first) pr.extra.clue = (pr.extra.clue || 0) + 1; } else if (item.extra) recordExtra(pr, item.extra, first); else recordResult(pr, item.c, first);
-        if (first) { session.first++; gainExp(pr, 8 + Math.min(10, pr.player.level)); }
+        if (first) { if (!item.retry) session.first++; gainExp(pr, 8 + Math.min(10, pr.player.level)); }  // 「再练一次」答对不算进「一次就答对」
         else if (item.extra || item.clue || item.skill) gainExp(pr, 3);
         else {
           gainExp(pr, 3);
