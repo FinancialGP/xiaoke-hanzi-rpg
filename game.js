@@ -1026,6 +1026,8 @@
     });
     return b;
   }
+  /** 同一个网址下的数学游戏（math/），存档各自分开 */
+  function goMath() { SFX.click(); try { saveStore(); } catch (e) { /* */ } VOICE.stop(); global.location.href = "math/"; }
   function addBtn(label, fn, opts) { var b = btn(label, fn, opts); $("menu").appendChild(b); return b; }
   function speedLines(on) { $("speed").classList.toggle("hidden", !on); }
   function showScene(show) { $("scene").classList.toggle("hidden", !show); }
@@ -1222,6 +1224,7 @@
     }
     $("menu").appendChild(grid);
     if (store.profiles.length >= 2) addBtn("🤝 同心协力 · 双人轮流打魔王", function () { chooseDuo(); }, { cls: "blue" });
+    addBtn("🧮 数学大冒险 · 去森林算一算", goMath, { cls: "yellow" });
     addBtn("📥 导入存档（存档码 / 文件）", function () { renderImport(renderTitle); }, { cls: "small" });
     var done = store.legacySlotsDone || [];
     legacySlots().forEach(function (ls) {
@@ -1339,6 +1342,7 @@
     row2.appendChild(btn("🅰️ 拼音修炼<br><small>" + PY_LEVELS[prof.pinyin.lv].name + " · " + pm.done + "/" + pm.total + "</small>", function () { startSession("py"); }, { cls: "skillbtn" }));
     row2.appendChild(btn("🧩 偏旁修炼<br><small>" + rm.done + "/" + rm.total + "</small>", function () { startSession("rad"); }, { cls: "skillbtn" }));
     $("menu").appendChild(row2);
+    addBtn("🧮 数学大冒险", goMath, { cls: "small yellow" });
     if (store.profiles.length >= 2) addBtn("🤝 双人模式", chooseDuo, { cls: "small" });
     scrollTop();
   }
