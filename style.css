@@ -278,3 +278,15 @@ button{font-family:inherit;color:inherit}
 .scn .sin{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.7)}
 .btn.opt.scene{min-height:120px}
 .qtitle .rc{font-size:1.3rem;line-height:1.9}
+/* v7 故事目录：篇章小标题 */
+.arc-head{text-align:center;font-weight:800;color:#0d3a99;margin:8px 0 2px;font-size:1rem}
+/* v7 拼音 / 偏旁修炼 */
+.btn.skillbtn{background:linear-gradient(#7be08a,#2fa84a);color:#fff;border-color:#1d6e30}
+.btn.skillbtn small{font-size:.75rem;opacity:.95}
+.pyb{font-family:"Arial","Helvetica",sans-serif;font-weight:800;letter-spacing:.02em}
+.pyb.big{font-size:2.2rem}
+.btn.opt.pyopt{font-size:1.7rem;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
+.btn.opt.pyopt small{font-size:.8rem;font-weight:600}
+.qmath .pyb{color:#0d3a99}
+.emo-s{font-size:1.5rem}
+.radhint{margin:6px auto 2px;padding:4px 10px;border-radius:12px;background:#fff6d6;border:2px dashed #f0a020;font-size:.95rem;max-width:320px}

@@ -311,7 +311,8 @@
       name: name, mode: mode, avatar: avatar, color: color,
       player: defaultPlayer(), srs: {}, stage: 0, wishes: 0, stickers: [], story: 0,
       sessions: 0, lastDay: "", dayStreak: 0, createdAt: now(),
-      extra: { math: 0, eng: 0, clue: 0 }, settings: { pinyin: false }, reads: {}, readHelp: {}, readBalls: 0, shelfSeen: []
+      extra: { math: 0, eng: 0, clue: 0 }, settings: { pinyin: false }, reads: {}, readHelp: {}, readBalls: 0, shelfSeen: [],
+      pinyin: { lv: 0, items: {} }, radical: { items: {} }
     };
   }
 
@@ -347,6 +348,12 @@
     if (!pr.extra || typeof pr.extra !== "object") pr.extra = { math: 0, eng: 0 };
     delete pr.balls;
     if (!pr.reads || typeof pr.reads !== "object") pr.reads = {};
+    // v7：拼音 / 偏旁掌握情况（旧存档没有就从头开始）
+    if (!pr.pinyin || typeof pr.pinyin !== "object") pr.pinyin = { lv: 0, items: {} };
+    if (typeof pr.pinyin.lv !== "number") pr.pinyin.lv = 0;
+    if (!pr.pinyin.items || typeof pr.pinyin.items !== "object") pr.pinyin.items = {};
+    if (!pr.radical || typeof pr.radical !== "object") pr.radical = { items: {} };
+    if (!pr.radical.items || typeof pr.radical.items !== "object") pr.radical.items = {};
     if (!pr.readHelp || typeof pr.readHelp !== "object") pr.readHelp = {};
     if (!Array.isArray(pr.shelfSeen)) pr.shelfSeen = [];
     ["stage", "wishes", "sessions", "dayStreak", "story", "readBalls"].forEach(function (k) { if (typeof pr[k] !== "number") pr[k] = 0; });
@@ -648,6 +655,300 @@
     }
     q.options = shuffle(q.options);
     return q;
+  }
+
+  /* ═══════════════ v7：拼音修炼 + 偏旁修炼（放在「修炼」里，和龙珠/复习/提示同一套流程） ═══════════════ */
+  var TONE_MARK = { a: "āáǎà", o: "ōóǒò", e: "ēéěè", i: "īíǐì", u: "ūúǔù", "ü": "ǖǘǚǜ" };
+  var TONE_NAME = ["", "一声 ˉ", "二声 ˊ", "三声 ˇ", "四声 ˋ"];
+  var TONE_SAY = ["", "第一声", "第二声", "第三声", "第四声"];
+  /** 把 "ma"+3 写成 "mǎ"（a/e 优先，ou 标 o，否则标最后一个元音） */
+  function markTone(base, t) {
+    if (!t) return base;
+    var idx = base.search(/[ae]/);
+    if (idx < 0) idx = base.indexOf("ou");
+    if (idx < 0) { for (var k = base.length - 1; k >= 0; k--) if ("iuüo".indexOf(base[k]) >= 0) { idx = k; break; } }
+    if (idx < 0) return base;
+    return base.slice(0, idx) + TONE_MARK[base[idx]][t - 1] + base.slice(idx + 1);
+  }
+  /** "mǎ" → {base:"ma", t:3} */
+  function splitTone(py) {
+    var t = 0, out = "";
+    for (var i = 0; i < py.length; i++) {
+      var ch = py[i], hit = false;
+      Object.keys(TONE_MARK).forEach(function (v) { var p = TONE_MARK[v].indexOf(ch); if (p >= 0) { out += v; t = p + 1; hit = true; } });
+      if (!hit) out += ch;
+    }
+    return { base: out, t: t };
+  }
+  var INITIALS = ["b", "p", "m", "f", "d", "t", "n", "l", "g", "k", "h", "j", "q", "x", "zh", "ch", "sh", "r", "z", "c", "s", "y", "w"];
+  var SINGLE_F = ["a", "o", "e", "i", "u", "ü"];
+  var COMPOUND_F = ["ai", "ei", "ui", "ao", "ou", "iu", "ie", "üe", "er", "an", "en", "in", "un", "ün", "ang", "eng", "ing", "ong"];
+  var WHOLE = ["zhi", "chi", "shi", "ri", "zi", "ci", "si", "yi", "wu", "yu", "ye", "yue", "yuan", "yin", "yun", "ying"];
+  // 单韵母的读音用字（「哦」「鹅」可能不在字库里，只用来读）
+  var SINGLE_SAY = { a: ["啊", "ā"], o: ["喔", "ō"], e: ["鹅", "é"], i: ["衣", "yī"], u: ["乌", "wū"], "ü": ["鱼", "yú"] };
+  var PY_LEVELS = [
+    { name: "单韵母", items: SINGLE_F },
+    { name: "声母", items: INITIALS },
+    { name: "复韵母", items: COMPOUND_F },
+    { name: "整体认读", items: WHOLE }
+  ];
+  /** 从字库里整理出「音节 → 例字」（常用的字优先），拆成声母+韵母 */
+  var SYL = null;
+  function syllables() {
+    if (SYL) return SYL;
+    SYL = { list: [], byKey: {} };
+    DB.slice().sort(function (a, b) { return (a.n || 9999) - (b.n || 9999); }).forEach(function (h) {
+      if (!h.py || /\s/.test(h.py)) return;
+      var s = splitTone(h.py.toLowerCase()); if (!s.t) return;
+      var key = s.base + s.t;
+      if (SYL.byKey[key]) { if (SYL.byKey[key].chars.length < 3) SYL.byKey[key].chars.push(h.c); return; }
+      var ini = "", fin = s.base;
+      for (var i = 0; i < INITIALS.length; i++) { var I = INITIALS[i]; if (s.base.indexOf(I) === 0 && I.length > ini.length) ini = I; }
+      fin = s.base.slice(ini.length);
+      if (/^[jqxy]/.test(ini) && fin[0] === "u") fin = "ü" + fin.slice(1);     // ju/qu/xu/yu 里的 u 其实是 ü
+      var o = { key: key, base: s.base, t: s.t, ini: ini, fin: fin, py: h.py.toLowerCase(), chars: [h.c], whole: WHOLE.indexOf(s.base) >= 0 };
+      SYL.byKey[key] = o; SYL.list.push(o);
+    });
+    return SYL;
+  }
+  function sylSpeak(o) { return o.chars[0]; }
+
+  // 偏旁：意思提示 + 常用字（都用字库里有的字）+ 「偏旁 + 部件 = 字」
+  var RADICALS = [
+    { r: "氵", name: "三点水", m: "水", em: "💧", en: "water", cue: "和水有关", cs: "河湖海洗池江汗汁法活清没" },
+    { r: "亻", name: "单人旁", m: "人", em: "🧍", en: "person", cue: "和人有关", cs: "他们你住体什休做位件信作" },
+    { r: "口", name: "口字旁", m: "嘴巴", em: "👄", en: "mouth", cue: "和嘴巴、说话、吃喝有关", cs: "吃叫喝唱吗吧听呢吹呀" },
+    { r: "木", name: "木字旁", m: "树木", em: "🌳", en: "tree / wood", cue: "和树、木头有关", cs: "林树桃村校板杯椅机" },
+    { r: "扌", name: "提手旁", m: "手", em: "✋", en: "hand", cue: "和手的动作有关", cs: "打找拉拍推把抱提接扫" },
+    { r: "女", name: "女字旁", m: "女孩", em: "👩", en: "woman", cue: "和女孩、妈妈有关", cs: "妈她好姐妹奶姓姑" },
+    { r: "艹", name: "草字头", m: "草", em: "🌿", en: "grass", cue: "和花草有关", cs: "花草茶苹菜药英蓝" },
+    { r: "日", name: "日字旁", m: "太阳", em: "☀️", en: "sun", cue: "和太阳、时间有关", cs: "明早晚时昨晴暗春" },
+    { r: "月", name: "月字旁", m: "身体", em: "💪", en: "body (flesh)", cue: "常和身体有关", cs: "肚脸朋腿脚胖肥胆" },
+    { r: "讠", name: "言字旁", m: "说话", em: "🗣️", en: "speech", cue: "和说话有关", cs: "说话语认识读让请谁课" },
+    { r: "钅", name: "金字旁", m: "金属", em: "🔩", en: "metal", cue: "和金属有关", cs: "铁钱银针钟锅错铅" },
+    { r: "火", name: "火字旁 / 四点底 灬", m: "火", em: "🔥", en: "fire", cue: "和火、热有关", cs: "炒灯烧烤炸点热照熊" },
+    { r: "土", name: "提土旁", m: "泥土", em: "🟫", en: "earth", cue: "和泥土、地方有关", cs: "地场在坐城块坏" },
+    { r: "忄", name: "竖心旁", m: "心情", em: "❤️", en: "heart", cue: "和心情有关", cs: "忙快怕情慢惯懂" },
+    { r: "辶", name: "走之底", m: "走路", em: "🚶", en: "walk", cue: "和走路有关", cs: "近过还这道远进送边" }
+  ];
+  var BUILDS = [["氵", "也", "池"], ["亻", "也", "他"], ["女", "也", "她"], ["土", "也", "地"], ["木", "木", "林"], ["日", "月", "明"],
+    ["口", "马", "吗"], ["女", "马", "妈"], ["扌", "丁", "打"], ["艹", "化", "花"], ["讠", "舌", "话"], ["钅", "中", "钟"],
+    ["火", "丁", "灯"], ["忄", "亡", "忙"], ["亻", "木", "休"], ["口", "巴", "吧"], ["扌", "巴", "把"], ["女", "子", "好"],
+    ["日", "寸", "时"], ["辶", "斤", "近"], ["讠", "人", "认"], ["氵", "先", "洗"], ["木", "寸", "村"], ["火", "少", "炒"],
+    ["土", "成", "城"], ["亻", "尔", "你"], ["月", "土", "肚"], ["讠", "兑", "说"]];
+  var RAD_BY = {}, RAD_OF = {};
+  RADICALS.forEach(function (R) {
+    R.list = R.cs.split("").filter(function (c) { return BYC[c]; });
+    RAD_BY[R.r] = R; R.list.forEach(function (c) { RAD_OF[c] = R; });
+  });
+  BUILDS = BUILDS.filter(function (b) { return BYC[b[2]]; });
+
+  /** 每个拼音项目/偏旁一个小复习盒（和汉字一样按间隔复习），只记在这个小侠客身上 */
+  function skillRec(pr, kind, key) {
+    var box = kind === "py" ? pr.pinyin : pr.radical;
+    if (!box.items[key]) box.items[key] = { b: 0, due: 0, ok: 0, bad: 0 };
+    return box.items[key];
+  }
+  function recordSkill(pr, kind, key, first) {
+    var r = skillRec(pr, kind, key);
+    if (first) { r.ok++; if (r.due <= now()) r.b = Math.min(6, r.b + 1); } else { r.bad++; r.b = Math.min(r.b, 1); }
+    r.due = now() + INTERVALS[r.b];
+    if (kind === "py") {
+      var L = PY_LEVELS[pr.pinyin.lv];
+      if (L && pr.pinyin.lv < PY_LEVELS.length - 1 && L.items.every(function (k) { var x = pr.pinyin.items[k]; return x && x.ok >= 1; })) { pr.pinyin.lv++; pr.pinyin.up = true; }
+    }
+  }
+  /** 挑一个该练的项目：先挑答错的/到期的，再挑没练过的 */
+  function pickSkillItem(pr, kind, keys) {
+    var box = (kind === "py" ? pr.pinyin : pr.radical).items, t = now();
+    var weak = keys.filter(function (k) { return box[k] && box[k].b <= 1 && box[k].bad > 0 && box[k].due <= t; });
+    var due = keys.filter(function (k) { return box[k] && box[k].due <= t; });
+    var fresh = keys.filter(function (k) { return !box[k]; });
+    if (weak.length && Math.random() < 0.6) return pick(weak);
+    if (fresh.length && Math.random() < 0.6) return fresh[0];
+    if (due.length) return pick(due);
+    return pick(keys);
+  }
+  function mastery(pr, kind) {
+    var box = (kind === "py" ? pr.pinyin : pr.radical).items, keys = kind === "py" ? [].concat(SINGLE_F, INITIALS, COMPOUND_F, WHOLE) : RADICALS.map(function (R) { return R.r; });
+    return { done: keys.filter(function (k) { return box[k] && box[k].b >= 2; }).length, total: keys.length };
+  }
+  function learnedList(pr) { return Object.keys(pr.srs).filter(function (c) { return pr.srs[c].ok > 0 && BYC[c]; }); }
+  function pyOpt(s) { return '<b class="pyb">' + esc(s) + "</b>"; }
+  function skillQ(kind, type) { var q = baseExtra(kind, type); q.optCls = "pyopt"; return q; }
+  function finishOpts(q, ans, wrongs, fmt) {
+    q.answerKey = ans;
+    var seen = {}; q.options = [];
+    [ans].concat(shuffle(wrongs)).forEach(function (o) { if (!seen[o] && q.options.length < q.nOpt) { seen[o] = 1; q.options.push(o); } });
+    q.options.forEach(function (o) { q.optMap[o] = fmt ? fmt(o) : pyOpt(o); });
+    q.options = shuffle(q.options);
+    return q;
+  }
+  function sylsWith(f) { return syllables().list.filter(f); }
+
+  /** 出一道拼音题。type 不给就按等级随机 */
+  function makePinyin(pr, type) {
+    var n = optionCount(pr), little = pr.mode === "little", lv = pr.pinyin.lv, q, o, w;
+    var types;
+    if (little) types = ["single"];        // 启蒙模式：听一听、点一点（只出单韵母，3 个大按钮）
+    else if (lv === 0) types = ["single", "tone"];
+    else if (lv === 1) types = ["initial", "join", "tone", "single"];
+    else if (lv === 2) types = ["final", "join", "syl", "tone", "initial"];
+    else types = ["whole", "syl", "join", "tone", "final"];
+    if (!little && lv >= 1 && learnedList(pr).length >= 8) types.push("read");
+    type = type || pick(types);
+    if (type === "single") {
+      var key = pickSkillItem(pr, "py", SINGLE_F), say = SINGLE_SAY[key];
+      q = skillQ("py", "single"); q.nOpt = little ? 3 : n; q.item = key;
+      q.title = little ? "听一听，点一点" : "听一听，是哪个单韵母？"; q.en = "Listen: which vowel?";
+      q.mainHTML = '<div class="qpic" id="qTarget">🔊👂</div>';
+      q.speak = say[0]; q.sayAnswer = say[0];
+      q.hintHTML = '<span class="py">' + esc(say[1]) + "</span> " + esc(say[0]);
+      return finishOpts(q, key, SINGLE_F.filter(function (x) { return x !== key; }), function (x) { return '<b class="pyb big">' + x + "</b>"; });
+    }
+    if (type === "tone") {
+      var pool = lv === 0 ? sylsWith(function (s) { return !s.ini && SINGLE_F.indexOf(s.fin) >= 0 || (s.base.length <= 2 && /^[bpmfdtnl]/.test(s.base)); }) : syllables().list;
+      o = pick(pool.slice(0, 120));
+      q = skillQ("py", "tone"); q.nOpt = 4; q.item = "t" + o.t;
+      q.title = "听一听，是第几声？"; q.en = "Which tone?";
+      q.mainHTML = '<div class="qword en" id="qTarget">' + esc(o.base) + " 🔊</div>";
+      q.speak = sylSpeak(o); q.sayAnswer = [sylSpeak(o), TONE_SAY[o.t]];
+      q.hintHTML = '<span class="py">' + esc(o.py) + "</span> " + esc(o.chars[0]);
+      return finishOpts(q, String(o.t), ["1", "2", "3", "4"], function (t) { return '<b class="pyb">' + markTone(o.base, +t) + "</b><small>" + TONE_NAME[+t] + "</small>"; });
+    }
+    if (type === "initial") {
+      var ini = pickSkillItem(pr, "py", INITIALS);
+      o = pick(sylsWith(function (s) { return s.ini === ini && !s.whole; }).slice(0, 8)) || pick(sylsWith(function (s) { return s.ini === ini; }));
+      q = skillQ("py", "initial"); q.nOpt = n; q.item = ini;
+      q.title = "听一听，声母是哪个？"; q.en = "Listen: which initial?";
+      q.mainHTML = '<div class="qword en" id="qTarget">?' + esc(markTone(o.fin.replace("ü", /^[jqxy]/.test(ini) ? "u" : "ü"), o.t)) + " 🔊</div>";
+      q.speak = sylSpeak(o); q.sayAnswer = sylSpeak(o);
+      q.hintHTML = '<span class="py">' + esc(o.py) + "</span> " + esc(o.chars[0]);
+      var near = { b: "pdm", p: "bqt", m: "nb", f: "hb", d: "tb", t: "dk", n: "lm", l: "nr", g: "kh", k: "gh", h: "fk", j: "qx", q: "jx", x: "qs", zh: "z,ch,sh", ch: "c,zh,sh", sh: "s,zh,ch", r: "l", z: "zh,c,s", c: "ch,z,s", s: "sh,z,c", y: "w", w: "y" }[ini];
+      w = (near.indexOf(",") >= 0 ? near.split(",") : near.split("")).concat(shuffle(INITIALS));
+      return finishOpts(q, ini, w.filter(function (x) { return x !== ini; }));
+    }
+    if (type === "final" || type === "join") {
+      var keys = type === "final" || lv >= 2 ? COMPOUND_F : SINGLE_F;
+      var fin = pickSkillItem(pr, "py", keys);
+      var cand = sylsWith(function (s) { return s.fin === fin && s.ini && !s.whole && s.ini !== "y" && s.ini !== "w"; });
+      o = pick(cand.slice(0, 8));
+      if (!o) return makePinyin(pr, "tone");
+      var shown = o.base.slice(o.ini.length);
+      if (type === "final") {
+        q = skillQ("py", "final"); q.nOpt = n; q.item = fin;
+        q.title = "听一听，韵母是哪个？"; q.en = "Listen: which final?";
+        q.mainHTML = '<div class="qword en" id="qTarget">' + esc(o.ini) + "? 🔊</div>";
+        q.speak = sylSpeak(o); q.sayAnswer = sylSpeak(o);
+        q.hintHTML = '<span class="py">' + esc(o.py) + "</span> " + esc(o.chars[0]);
+        return finishOpts(q, shown, shuffle(COMPOUND_F.map(function (f) { return f.replace("ü", /^[jqx]/.test(o.ini) ? "u" : "ü"); })).filter(function (x) { return x !== shown; }));
+      }
+      q = skillQ("py", "join"); q.nOpt = n; q.item = o.ini;
+      q.title = "拼一拼：声母 + 韵母 = ？"; q.en = "Blend the sounds";
+      q.mainHTML = '<div class="qmath" id="qTarget"><span class="pyb">' + esc(o.ini) + '</span> + <span class="pyb">' + esc(markTone(shown, o.t)) + '</span> = <span class="blank">？</span></div>';
+      q.sayAnswer = sylSpeak(o);
+      q.speak = "拼一拼"; q.hintHTML = '<span class="py">' + esc(o.py) + "</span> " + esc(o.chars[0]);
+      var others = [1, 2, 3, 4].filter(function (t) { return t !== o.t; }).map(function (t) { return markTone(o.base, t); })
+        .concat(sylsWith(function (s) { return s.fin === o.fin && s.ini !== o.ini && s.t === o.t; }).slice(0, 4).map(function (s) { return s.py; }));
+      return finishOpts(q, o.py, others);
+    }
+    if (type === "whole" || type === "syl") {
+      var base;
+      if (type === "whole") base = pickSkillItem(pr, "py", WHOLE);
+      o = type === "whole" ? pick(sylsWith(function (s) { return s.base === base; }).slice(0, 3)) : pick(syllables().list.slice(0, 300));
+      if (!o) return makePinyin(pr, "tone");
+      q = skillQ("py", type); q.nOpt = n; q.item = type === "whole" ? base : (o.fin || o.base);
+      q.title = type === "whole" ? "整体认读：听一听，选拼音" : "听一听，选拼音"; q.en = "Listen and pick the pinyin";
+      q.mainHTML = '<div class="qpic" id="qTarget">🔊</div>';
+      q.speak = sylSpeak(o); q.sayAnswer = sylSpeak(o);
+      q.hintHTML = esc(o.chars[0]) + " · " + (type === "whole" ? "整体认读音节，不用拼" : "先听声母，再听韵母");
+      var pool2 = type === "whole" ? WHOLE.map(function (b) { return markTone(b, o.t); }) : [];
+      pool2 = pool2.concat([1, 2, 3, 4].filter(function (t) { return t !== o.t; }).map(function (t) { return markTone(o.base, t); }))
+        .concat(sylsWith(function (s) { return s.ini === o.ini && s.fin !== o.fin && s.t === o.t; }).slice(0, 3).map(function (s) { return s.py; }));
+      return finishOpts(q, o.py, shuffle(pool2.filter(function (x) { return x !== o.py; })));
+    }
+    // read：看拼音，选认识的字（只用这个小侠客学会的字）
+    var learned = shuffle(learnedList(pr).filter(function (c) { return !/\s/.test(BYC[c].py); }));
+    if (learned.length < 4) return makePinyin(pr, "tone");
+    var c = learned[0];
+    q = skillQ("py", "read"); q.nOpt = n; q.item = splitTone(BYC[c].py).base; q.optCls = "hz";
+    q.title = "读拼音，哪个字是「" + BYC[c].py + "」？"; q.en = "Read the pinyin";
+    q.mainHTML = '<div class="qword en" id="qTarget">' + esc(BYC[c].py) + "</div>";
+    q.speak = "读一读拼音，找一找是哪个字"; q.sayAnswer = c;
+    q.hintHTML = (BYC[c].pic || "") + " " + esc(BYC[c].en || "");
+    var wr = learned.slice(1).filter(function (x) { return BYC[x].py !== BYC[c].py; });
+    if (wr.length < n - 1) wr = wr.concat(shuffle(unlockedChars(pr).filter(function (x) { return x !== c && BYC[x].py !== BYC[c].py; })));
+    return finishOpts(q, c, wr, function (x) { return esc(x); });
+  }
+
+  /** 字的池子：优先用学会的字，不够再用已解锁的字、偏旁常用字 */
+  function radChars(pr, R) {
+    var L = learnedList(pr), mine = R.list.filter(function (c) { return L.indexOf(c) >= 0; });
+    return mine.length ? mine.concat(R.list.filter(function (c) { return mine.indexOf(c) < 0; })) : R.list;
+  }
+  function makeRadical(pr, type) {
+    var n = optionCount(pr), q;
+    var learned = learnedList(pr);
+    // 先练学过的字里出现过的偏旁
+    var keys = RADICALS.filter(function (R) { return R.list.length >= 3; }).map(function (R) { return R.r; });
+    var mineKeys = keys.filter(function (k) { return RAD_BY[k].list.some(function (c) { return learned.indexOf(c) >= 0; }); });
+    var key = pickSkillItem(pr, "rad", mineKeys.length >= 4 ? mineKeys : keys), R = RAD_BY[key];
+    type = type || pick(["meaning", "which", "family", "build"]);
+    var others = shuffle(RADICALS.filter(function (x) { return x !== R; }));
+    if (type === "meaning") {
+      q = skillQ("rad", "meaning"); q.nOpt = n; q.item = key; q.optCls = "word";
+      q.title = "偏旁「" + R.r + "」和什么有关？"; q.en = "What does this radical mean?";
+      q.mainHTML = '<div class="qchar aura" id="qTarget">' + esc(R.r) + "</div>";
+      q.speak = [R.name, "和什么有关？"]; q.sayAnswer = [R.name, R.cue];
+      q.hintHTML = "例字：" + radChars(pr, R).slice(0, 3).join(" ");
+      return finishOpts(q, R.r, others.map(function (x) { return x.r; }), function (r) { return '<span class="emo-s">' + RAD_BY[r].em + "</span> " + esc(RAD_BY[r].m); });
+    }
+    if (type === "which" || type === "family") {
+      var pool = radChars(pr, R), ans = pool[0];
+      if (type === "family") { if (pool.length < 2) type = "which"; }
+      var ref = type === "family" ? pool[1] : null;
+      if (type === "family" && Math.random() < 0.5) { ans = pool[1]; ref = pool[0]; }
+      q = skillQ("rad", type); q.nOpt = n; q.item = key; q.optCls = "hz";
+      var wrong = [];
+      others.forEach(function (x) { var p = radChars(pr, x); if (p.length) wrong.push(p[0]); });
+      if (type === "which") {
+        q.title = "哪个字有「" + R.r + "」？"; q.en = "Which character has this radical?";
+        q.mainHTML = '<div class="qchar aura" id="qTarget">' + esc(R.r) + '</div><div class="qen">' + R.em + " " + esc(R.name) + " · " + esc(R.cue) + "</div>";
+        q.speak = ["哪个字有", R.name];
+      } else {
+        q.title = "分一分：哪个字和「" + ref + "」是一家？"; q.en = "Same radical family";
+        q.mainHTML = '<div class="qchar aura" id="qTarget">' + esc(ref) + "</div>";
+        q.speak = ["哪个字和", ref, "是一家？"];
+      }
+      q.sayAnswer = [ans, "有" + R.name, R.cue];
+      q.hintHTML = R.em + " 找有「" + esc(R.r) + "」的字 · " + esc(R.cue);
+      return finishOpts(q, ans, wrong, function (x) { return esc(x); });
+    }
+    // build：偏旁 + 部件 = 字（偏旁先挑这个，没有就随便挑一个）
+    var bs = BUILDS.filter(function (b) { return b[0] === key; });
+    var B = bs.length ? pick(bs) : pick(BUILDS);
+    var R2 = RAD_BY[B[0]];
+    q = skillQ("rad", "build"); q.nOpt = n; q.item = B[0]; q.optCls = "hz";
+    q.title = "拼字：「" + B[0] + "」+「" + B[1] + "」= ？"; q.en = "Build a character";
+    q.mainHTML = '<div class="qmath" id="qTarget">' + esc(B[0]) + " + " + esc(B[1]) + ' = <span class="blank">？</span></div>';
+    q.speak = [R2.name, "加", B[1], "是哪个字？"]; q.sayAnswer = B[2];
+    q.hintHTML = '<span class="py">' + esc(BYC[B[2]].py) + "</span> " + R2.em + " " + esc(R2.cue);
+    var wb = BUILDS.filter(function (b) { return b[2] !== B[2] && (b[1] === B[1] || b[0] === B[0]); }).map(function (b) { return b[2]; })
+      .concat(shuffle(BUILDS.map(function (b) { return b[2]; })));
+    return finishOpts(q, B[2], wb.filter(function (x) { return x !== B[2]; }), function (x) { return esc(x); });
+  }
+  function makeSkill(pr, kind) { return kind === "py" ? makePinyin(pr) : makeRadical(pr); }
+  /** 新字卡上的偏旁提示 */
+  function radicalHint(c) {
+    var R = RAD_OF[c]; if (!R) return "";
+    return '<div class="radhint">' + R.em + " 偏旁 <b>" + esc(R.r) + "</b>（" + esc(R.name) + "）· " + esc(R.cue) + "</div>";
+  }
+  var SKILL_RATE = 0.35;   // 普通修炼一关里大约三关里出一道拼音/偏旁题
+  var lastSkill = "rad";
+  function nextSkillKind(pr) {
+    if (pr.mode === "little") return pr.stage >= 1 ? "py" : null;
+    lastSkill = lastSkill === "py" && learnedCount(pr) >= 12 ? "rad" : "py";
+    return lastSkill;
   }
 
   /* ═══════════════ UI 基础 ═══════════════ */
@@ -988,6 +1289,11 @@
     row.appendChild(btn("🔤 字卡本", renderBook, { cls: "blue" }));
     row.appendChild(btn("🌟 贴纸", renderStickers, { cls: "blue" }));
     $("menu").appendChild(row);
+    var pm = mastery(prof, "py"), rm = mastery(prof, "rad");
+    var row2 = el("div", "row");
+    row2.appendChild(btn("🅰️ 拼音修炼<br><small>" + PY_LEVELS[prof.pinyin.lv].name + " · " + pm.done + "/" + pm.total + "</small>", function () { startSession("py"); }, { cls: "skillbtn" }));
+    row2.appendChild(btn("🧩 偏旁修炼<br><small>" + rm.done + "/" + rm.total + "</small>", function () { startSession("rad"); }, { cls: "skillbtn" }));
+    $("menu").appendChild(row2);
     if (store.profiles.length >= 2) addBtn("🤝 双人模式", chooseDuo, { cls: "small" });
     scrollTop();
   }
@@ -1008,6 +1314,8 @@
     row.appendChild(btn('<span style="font-size:2rem">🔤</span>', renderBook, { cls: "blue" }));
     row.appendChild(btn('<span style="font-size:2rem">🌟</span>', renderStickers, { cls: "yellow" }));
     $("menu").appendChild(row);
+    var pb = addBtn('<span style="font-size:2.2rem">👂</span> <b class="pyb big">a o e</b>', function () { startSession("py"); }, { cls: "skillbtn" });
+    pb.setAttribute("aria-label", "拼音");
     TTS.say("点大按钮，开始！");
     scrollTop();
   }
@@ -1049,11 +1357,18 @@
     slots.slice(0, k).forEach(function (i) { queue[i] = { extra: nextExtraKind(), retry: false }; });
     // v5：认识的字够了，大约每两关出一道「龙珠雷达线索」阅读题
     if (clueEligible(prof) && Math.random() < 0.5) { var free = idx.filter(function (i) { return !queue[i].extra; }); if (free.length) queue[pick(free)] = { clue: true, retry: false }; }
+    // v7：偶尔混进一道拼音 / 偏旁题（汉字题仍是大多数）
+    var sk = nextSkillKind(prof);
+    if (sk && Math.random() < SKILL_RATE) { var free2 = idx.filter(function (i) { return !queue[i].extra && !queue[i].clue; }); if (free2.length > 3) queue[pick(free2)] = { skill: sk, retry: false }; }
     return queue;
   }
-  function startSession() {
+  function startSession(only) {
+    var skillOnly = only === "py" || only === "rad";
+    var queue = [];
+    if (skillOnly) for (var k = 0; k < SESSION_LEN; k++) queue.push({ skill: only, retry: false });
+    else queue = withExtras(pickSessionChars(prof, SESSION_LEN).map(function (c) { return { c: c, retry: false }; }));
     session = {
-      pr: prof, queue: withExtras(pickSessionChars(prof, SESSION_LEN).map(function (c) { return { c: c, retry: false }; })),
+      pr: prof, queue: queue, only: skillOnly ? only : null,
       idx: 0, balls: 0, first: 0, missed: [], introduced: {}, newChars: []
     };
     screen = "session";     nextInSession();
@@ -1062,7 +1377,7 @@
     if (!session) return goHome();
     if (session.idx >= session.queue.length) return endSession();
     var item = session.queue[session.idx], pr = session.pr, c = item.c;
-    if (item.extra || item.clue) return askInSession(item);
+    if (item.extra || item.clue || item.skill) return askInSession(item);
     var r = rec(c, pr);
     if (!r.seen && !session.introduced[c]) { session.introduced[c] = 1; session.newChars.push(c); return showIntro(c, function () { askInSession(item); }); }
     askInSession(item);
@@ -1070,16 +1385,21 @@
   function sessionMenu() { return [["⏸ 休息一下（回主页）", function () { saveStore(); session = null; goHome(); }, { cls: "small" }]]; }
   function askInSession(item) {
     var pr = session.pr;
-    var q = item.clue ? makeClue(pr) : item.extra ? makeExtra(pr, item.extra) : makeQuestion(pr, item.c);
+    var q = item.skill ? makeSkill(pr, item.skill) : item.clue ? makeClue(pr) : item.extra ? makeExtra(pr, item.extra) : makeQuestion(pr, item.c);
     var tag = item.retry ? "🔁 再练一次" : "第 " + Math.min(SESSION_LEN, session.balls + 1) + " 颗龙珠";
     if (item.extra) tag = (item.extra === "math" ? "🔢 数学 · " : "🔤 英语 · ") + tag;
     if (item.clue) tag = "📡 雷达线索 · " + tag;
+    if (item.skill) tag = (item.skill === "py" ? "🅰️ 拼音 · " : "🧩 偏旁 · ") + tag;
     showQuiz(q, {
       pr: pr, tag: tag, header: trackerHTML(), menu: sessionMenu(),
       onDone: function (first, b) {
-        if (item.clue) { if (first) pr.extra.clue = (pr.extra.clue || 0) + 1; } else if (item.extra) recordExtra(pr, item.extra, first); else recordResult(pr, item.c, first);
+        if (item.skill) {
+          recordSkill(pr, item.skill, q.item, first);
+          if (pr.pinyin.up) { delete pr.pinyin.up; addLog("🎉 拼音升级：开始学「" + PY_LEVELS[pr.pinyin.lv].name + "」！", "good"); }
+          if (!first && !item.retry && session.queue.length < SESSION_LEN + 3) session.queue.splice(Math.min(session.queue.length, session.idx + 3), 0, { skill: item.skill, retry: true });
+        } else if (item.clue) { if (first) pr.extra.clue = (pr.extra.clue || 0) + 1; } else if (item.extra) recordExtra(pr, item.extra, first); else recordResult(pr, item.c, first);
         if (first) { session.first++; gainExp(pr, 8 + Math.min(10, pr.player.level)); }
-        else if (item.extra || item.clue) gainExp(pr, 3);
+        else if (item.extra || item.clue || item.skill) gainExp(pr, 3);
         else {
           gainExp(pr, 3);
           if (session.missed.indexOf(item.c) === -1) session.missed.push(item.c);
@@ -1114,7 +1434,7 @@
     }).join("") + "</div>" : "";
     box.innerHTML = trackerHTML() + '<div class="qbox newcard"><div class="newbadge">新字!</div><span class="qtag">认识新字 · New</span>' +
       (it.pic ? '<div class="qpic" style="font-size:4rem">' + it.pic + "</div>" : "") +
-      '<div class="qchar aura">' + esc(c) + '</div><div class="hintline">' + charHint(c) + "</div>" + wl +
+      '<div class="qchar aura">' + esc(c) + '</div><div class="hintline">' + charHint(c) + "</div>" + (little ? "" : radicalHint(c)) + wl +
       '<div class="tools"><button class="btn blue" type="button" id="sayBtn">🔊 再听一次</button></div></div>';
     $("sayBtn").onclick = function () { SFX.click(); TTS.say(introSpeech(c, little)); };
     box.querySelectorAll(".wordchip").forEach(function (b) {
@@ -1304,7 +1624,18 @@
     narr: { name: "旁白", emoji: "📜" },
     goku: { name: "小悟空", svg: "goku" }, krillin: { name: "小库林", svg: "krillin" },
     bulma: { name: "布尔玛" }, yamcha: { name: "雅木查" }, roshi: { name: "龟仙人" },
-    launch: { name: "蓝琪" }, chiaotzu: { name: "饺子" }, tien: { name: "天津饭" }
+    launch: { name: "蓝琪" }, chiaotzu: { name: "饺子" }, tien: { name: "天津饭" },
+    // v7 新角色（只用 emoji，没有官方图片）
+    oolong: { name: "乌龙", emoji: "🐷" }, puar: { name: "普尔", emoji: "🐱" }, oxking: { name: "牛魔王", emoji: "🐂" }, chichi: { name: "琪琪", emoji: "👧" },
+    blue: { name: "布鲁将军", emoji: "🪖" }, tao: { name: "桃白白", emoji: "🥷" }, korin: { name: "卡林大人", emoji: "🐈" },
+    demon: { name: "短笛大魔王", emoji: "😈" }, kami: { name: "天神", emoji: "👴" }, popo: { name: "波波先生", emoji: "🧞" },
+    piccolo: { name: "短笛", emoji: "🟢" }, gohan: { name: "孙悟饭", emoji: "👦" }, raditz: { name: "拉蒂兹", emoji: "🦹" },
+    kaio: { name: "界王", emoji: "🕶️" }, bubbles: { name: "泡泡", emoji: "🐒" }, gregory: { name: "格列格利", emoji: "🦗" },
+    saibaman: { name: "栽培人", emoji: "🥬" }, nappa: { name: "那巴", emoji: "💪" }, vegeta: { name: "贝吉塔", emoji: "👑" },
+    dende: { name: "丁迪", emoji: "🌱" }, elder: { name: "最长老", emoji: "🧓" }, nail: { name: "内鬼", emoji: "🛡️" },
+    zarbon: { name: "撒保", emoji: "💎" }, dodoria: { name: "多多利亚", emoji: "🦛" }, frieza: { name: "弗利萨", emoji: "👾" },
+    ginyu: { name: "基纽", emoji: "💜" }, jeice: { name: "吉斯", emoji: "🔥" }, burter: { name: "巴特", emoji: "💨" },
+    recoome: { name: "利库姆", emoji: "🦍" }, guldo: { name: "古尔多", emoji: "🐸" }, porunga: { name: "波伦加", emoji: "🐲" }
   };
   function portraitHTML(key, size) {
     size = size || 80;
@@ -1353,23 +1684,185 @@
         ["goku", "我也会用尽全力！"], ["roshi", "记住：认真、冷静、不放弃！"]],
       matches: [{ name: "天津饭", portrait: "tien", hp: 10 }],
       outro: [["tien", "你赢了……原来练武不只是为了赢。"], ["goku", "我们做朋友吧！"], ["narr", "大家成了好朋友！早期篇完结，恭喜你！"]],
-      reward: { exp: 100, sticker: "🏆" } }
+      reward: { exp: 100, sticker: "🏆" } },
+    // ── v7：少年篇 · 红缎带军 · 短笛大魔王 · 赛亚人篇 · 那美克星篇（原创儿童版改写；need = 认识多少字才解锁）──
+    { title: "第七章 · 乌龙、普尔和火焰山", icon: "🔥", place: "火焰山", need: 60, arc: "少年篇",
+      intro: [["narr", "小悟空想起了以前找龙珠的路上，认识的好朋友。"], ["oolong", "我是乌龙，我会变身！可是只能变五分钟。"],
+        ["puar", "我是普尔，我也会变身！我是雅木查的好朋友。"], ["chichi", "我叫琪琪，我爸爸是牛魔王。"],
+        ["oxking", "我的城堡被大火包住了，我进不去！"], ["goku", "别担心，我去找龟仙人帮忙！"],
+        ["narr", "答对汉字，帮小悟空一起把火灭掉！"]],
+      matches: [{ name: "火焰山的大火", emoji: "🔥", hp: 8 }],
+      outro: [["roshi", "看我的龟派气功！"], ["oxking", "火灭了！谢谢你们！"], ["chichi", "小悟空，我长大了要嫁给你！"],
+        ["goku", "嫁？那是什么？好吃吗？"], ["oolong", "哈哈哈，小悟空什么都不懂！"]],
+      reward: { exp: 100, sticker: "🔥" } },
+    { title: "第八章 · 红缎带军来了", icon: "🎖️", place: "北边的雪山", need: 80, arc: "红缎带军篇",
+      intro: [["narr", "武道会以后，小悟空一个人去找爷爷的四星球。"], ["narr", "有一个很大的坏军队，叫红缎带军，他们也想要龙珠。"],
+        ["blue", "我是红缎带军的布鲁将军！龙珠是我们的！"], ["goku", "不行！龙珠不能给坏人！"],
+        ["narr", "小悟空在雪山里认识了好心的小女孩，她给了小悟空热汤。"], ["goku", "谢谢你！我一定会打败红缎带军！"]],
+      matches: [{ name: "红缎带军的士兵", emoji: "🪖", hp: 8 }, { name: "布鲁将军", portrait: "blue", hp: 8 }],
+      outro: [["blue", "这个孩子太强了……我输了！"], ["krillin", "小悟空，我来帮你啦！"], ["goku", "小库林！有朋友在，真好！"]],
+      reward: { exp: 110, sticker: "🎖️" } },
+    { title: "第九章 · 卡林塔和仙豆", icon: "🫘", place: "卡林塔", need: 100, arc: "红缎带军篇",
+      intro: [["tao", "我是杀手桃白白，红缎带军请我来打你！"], ["narr", "桃白白很强，小悟空被打败了。"],
+        ["goku", "我不放弃！我要变得更强！"], ["narr", "小悟空爬上了很高很高的卡林塔。"],
+        ["korin", "我是卡林大人。想喝我的超神水，要先从我手里拿到它。"], ["goku", "我每天都来练！"],
+        ["korin", "好孩子，送你仙豆。吃一颗，伤就好了，肚子也饱了。"]],
+      matches: [{ name: "卡林大人的修行", portrait: "korin", hp: 9 }],
+      outro: [["goku", "拿到了！我觉得身体变轻了！"], ["korin", "你的速度快了很多。下去吧！"], ["tao", "什么？你又回来了？"],
+        ["goku", "这次我不会输！"]],
+      reward: { exp: 120, sticker: "🫘" } },
+    { title: "第十章 · 打败红缎带军", icon: "⭐", place: "红缎带军基地", need: 120, arc: "红缎带军篇",
+      intro: [["narr", "小悟空打败了桃白白，一个人来到红缎带军的大基地。"], ["goku", "我来拿回龙珠！"],
+        ["bulma", "小悟空，我们也来了！"], ["yamcha", "我和普尔、乌龙一起来帮你！"], ["puar", "加油！加油！"],
+        ["narr", "答对汉字，打开基地的大门！"]],
+      matches: [{ name: "大机器人", emoji: "🤖", hp: 9 }, { name: "基地的大门", emoji: "🚪", hp: 6 }],
+      outro: [["narr", "红缎带军被打败了，再也不能做坏事了！"], ["goku", "龙珠找回来了！"], ["bulma", "大家一起努力，什么都能做到！"]],
+      reward: { exp: 130, sticker: "⭐" } },
+    { title: "第十一章 · 短笛大魔王", icon: "😈", place: "武道会的会场", need: 140, arc: "短笛大魔王篇",
+      intro: [["narr", "第22届武道会以后，出了一个很坏的大魔王，叫短笛大魔王。"], ["demon", "我要让全世界都怕我！"],
+        ["narr", "小库林受了重伤，大家都很难过。"], ["goku", "小库林……我一定要打败大魔王！"],
+        ["korin", "吃一颗仙豆吧。还要喝超神水，你会变得更强。"], ["tien", "小悟空，我和饺子也来帮你！"], ["chiaotzu", "我们是朋友！"]],
+      matches: [{ name: "大魔王的手下", emoji: "🦇", hp: 8 }, { name: "短笛大魔王", portrait: "demon", hp: 10 }],
+      outro: [["goku", "打败你了！世界平安了！"], ["narr", "大家用神龙的愿望，让小库林好起来了！"], ["krillin", "谢谢你，小悟空！"],
+        ["goku", "朋友有危险，我一定来！"]],
+      reward: { exp: 140, sticker: "😈" } },
+    { title: "第十二章 · 天上的神殿", icon: "🏛️", place: "天神的神殿", need: 160, arc: "短笛大魔王篇",
+      intro: [["narr", "卡林塔的上面，还有一座在云上的神殿。"], ["popo", "我是波波先生。欢迎你，小悟空。"],
+        ["kami", "我是地球的天神。神龙也是我做出来的。"], ["kami", "大魔王留下了一个孩子，他也叫短笛。三年后他会来武道会。"],
+        ["goku", "那我就在这里修炼三年！"], ["popo", "先学会安静。打扫神殿，也是修炼。"], ["narr", "小悟空每天都认真练习，长高了，也变强了。"]],
+      matches: [{ name: "波波先生的考验", portrait: "popo", hp: 10 }],
+      outro: [["popo", "你的心很安静了。"], ["kami", "去吧，武道会快开始了。"], ["goku", "谢谢天神，谢谢波波先生！"]],
+      reward: { exp: 150, sticker: "🏛️" } },
+    { title: "第十三章 · 第23届武道会：琪琪", icon: "💍", place: "第23届天下第一武道会", need: 180, arc: "短笛大魔王篇",
+      intro: [["narr", "三年过去了，小悟空长成了大哥哥。"], ["krillin", "小悟空，你长得好高呀！"],
+        ["chichi", "你还记得我吗？我是琪琪！你说过要娶我的！"], ["goku", "啊？我说过吗？"],
+        ["chichi", "那我们比一比！你赢了，就要娶我！"], ["goku", "好，我们来比！"], ["narr", "答对汉字，和琪琪好好比一场！"]],
+      matches: [{ name: "琪琪", portrait: "chichi", hp: 10 }],
+      outro: [["goku", "我想起来了，在火焰山，我们见过！"], ["goku", "好，我们结婚吧！"], ["chichi", "太好了！"],
+        ["oxking", "我的女儿要结婚啦，哈哈哈！"]],
+      reward: { exp: 160, sticker: "💍" } },
+    { title: "第十四章 · 决赛：短笛", icon: "🟢", place: "武道会决赛", need: 200, arc: "短笛大魔王篇",
+      intro: [["narr", "决赛的对手是短笛。他是大魔王的孩子。"], ["piccolo", "孙悟空，我今天要打败你！"],
+        ["goku", "我不会让你做坏事！"], ["kami", "小心，他会伸长手臂，还会变大！"], ["roshi", "悟空，用你学过的一切！"],
+        ["narr", "这是很难的一场比赛，答对汉字，就能出招！"]],
+      matches: [{ name: "短笛", portrait: "piccolo", hp: 11 }],
+      outro: [["piccolo", "我……输了。"], ["goku", "给他一颗仙豆吧。"], ["krillin", "什么？你要帮他？"],
+        ["goku", "我想以后再和他比一次！"], ["narr", "孙悟空第一次拿到了天下第一！"]],
+      reward: { exp: 170, sticker: "🟢" } },
+    { title: "第十五章 · 悟饭和拉蒂兹", icon: "👦", place: "龟仙屋", need: 230, arc: "赛亚人篇",
+      intro: [["narr", "几年以后，悟空和琪琪有了一个儿子，叫孙悟饭。"], ["gohan", "大家好，我是悟饭，我四岁了！"],
+        ["bulma", "悟饭好可爱！"], ["narr", "天上突然飞来一个长头发的人。"], ["raditz", "我是拉蒂兹，是你的哥哥！我们是赛亚人！"],
+        ["goku", "我的哥哥？我是从别的星球来的？"], ["raditz", "跟我走，不然我就带走你的儿子！"], ["piccolo", "孙悟空，这一次我们一起打！"]],
+      matches: [{ name: "拉蒂兹", portrait: "raditz", hp: 11 }],
+      outro: [["gohan", "不许欺负我爸爸！"], ["narr", "悟饭很生气，突然变得好强！"], ["narr", "拉蒂兹被打败了，可是悟空也受了重伤。"],
+        ["raditz", "还有两个更强的赛亚人，一年后就到……"], ["kami", "悟空，来天上吧。我带你去见界王。"]],
+      reward: { exp: 180, sticker: "👦" } },
+    { title: "第十六章 · 荒野里的悟饭", icon: "🏜️", place: "荒野", need: 260, arc: "赛亚人篇",
+      intro: [["piccolo", "悟饭，你身上有很大的力量。我来教你。"], ["gohan", "我想要妈妈……"],
+        ["piccolo", "一个人在荒野里活半年。要勇敢！"], ["narr", "悟饭一个人找吃的，晚上看着月亮。"],
+        ["gohan", "我不哭了，我要像爸爸一样强！"], ["narr", "短笛每天教悟饭练功，有时候还给他做衣服。"]],
+      matches: [{ name: "荒野里的大恐龙", emoji: "🦖", hp: 10 }, { name: "短笛的修行", portrait: "piccolo", hp: 8 }],
+      outro: [["piccolo", "很好，你进步了。"], ["gohan", "谢谢短笛先生！"], ["narr", "短笛的心，也一点一点变温暖了。"]],
+      reward: { exp: 190, sticker: "🏜️" } },
+    { title: "第十七章 · 界王星的修行", icon: "🪐", place: "界王星", need: 290, arc: "赛亚人篇",
+      intro: [["narr", "悟空在长长的蛇道上跑了很多天，到了小小的界王星。"], ["kaio", "我是北界王！先让我笑一下，我才教你。"],
+        ["goku", "嗯……界王，界王，走路要小心，别掉下去！"], ["kaio", "哈哈哈！好吧，我教你！"],
+        ["kaio", "第一个修行：抓住猴子泡泡。"], ["bubbles", "呜嗯呜嗯！"], ["kaio", "第二个修行：用锤子打到蝗虫格列格利。"],
+        ["gregory", "来呀，打不到我！"]],
+      matches: [{ name: "抓泡泡", portrait: "bubbles", hp: 8 }, { name: "打格列格利", portrait: "gregory", hp: 8 }],
+      outro: [["kaio", "你学会了！我教你界王拳和元气弹。"], ["kaio", "元气弹要大家一点一点的元气，合起来才最强。"],
+        ["goku", "大家的力量一起，好厉害！"], ["kaio", "快回地球！赛亚人到了！"]],
+      reward: { exp: 200, sticker: "🪐" } },
+    { title: "第十八章 · 栽培人来了", icon: "🌱", place: "地球的荒原", need: 320, arc: "赛亚人篇",
+      intro: [["nappa", "我是那巴！我们种几个栽培人玩一玩。"], ["vegeta", "我是赛亚人的王子贝吉塔。"],
+        ["narr", "地上长出了六个绿色的栽培人。"], ["tien", "大家小心！"], ["yamcha", "我来打第一个！"],
+        ["narr", "雅木查受了重伤。饺子和天津饭也被打败了。"], ["krillin", "我不会让朋友白白受伤！"], ["gohan", "我也要战斗！"]],
+      matches: [{ name: "栽培人", portrait: "saibaman", hp: 6 }, { name: "栽培人", portrait: "saibaman", hp: 6 }, { name: "那巴", portrait: "nappa", hp: 10 }],
+      outro: [["piccolo", "悟饭，快躲开！"], ["narr", "短笛保护了悟饭，自己受了重伤。"], ["gohan", "短笛先生！"],
+        ["goku", "我来了！大家辛苦了！"], ["narr", "悟空终于回到了地球！"]],
+      reward: { exp: 210, sticker: "🌱" } },
+    { title: "第十九章 · 界王拳！贝吉塔", icon: "👑", place: "地球的荒原", need: 350, arc: "赛亚人篇",
+      intro: [["goku", "吃一颗仙豆吧，小库林、悟饭。"], ["vegeta", "下级战士，你打不过我！"],
+        ["goku", "界王拳！两倍！三倍！"], ["vegeta", "什么？他变快了！"], ["narr", "贝吉塔变成了大猩猩，非常强大。"],
+        ["krillin", "我们一起用元气弹！"], ["gohan", "爸爸，我来帮你！"]],
+      matches: [{ name: "贝吉塔", portrait: "vegeta", hp: 12 }],
+      outro: [["vegeta", "我会回来的……"], ["narr", "贝吉塔坐着小飞船走了。"], ["bulma", "地球的龙珠没有了，因为天神和短笛是一体的。"],
+        ["krillin", "在那美克星上，还有那美克星的龙珠！"], ["bulma", "那我们坐宇宙飞船去那美克星！"]],
+      reward: { exp: 220, sticker: "👑" } },
+    { title: "第二十章 · 飞往那美克星", icon: "🚀", place: "宇宙飞船", need: 380, arc: "那美克星篇",
+      intro: [["bulma", "这是天神的宇宙飞船，我会开！"], ["chichi", "悟饭，在飞船上也要读书哦！"],
+        ["gohan", "好的，妈妈！"], ["krillin", "我们要飞一个月！"], ["narr", "宇宙好大，有很多星星。"],
+        ["bulma", "大家坐好，飞船要穿过小石头了！"], ["narr", "答对汉字，开着飞船躲开太空里的大石头！"]],
+      matches: [{ name: "太空里的大石头", emoji: "☄️", hp: 9 }],
+      outro: [["narr", "他们到了绿色的那美克星！"], ["gohan", "天空是绿色的！"], ["bulma", "龙珠雷达有反应了！"],
+        ["krillin", "可是这里有好多坏人……"]],
+      reward: { exp: 230, sticker: "🚀" } },
+    { title: "第二十一章 · 丁迪和最长老", icon: "🧓", place: "那美克星的村子", need: 410, arc: "那美克星篇",
+      intro: [["narr", "宇宙里最坏的弗利萨也来了，他也想要龙珠。"], ["dodoria", "我是多多利亚！把龙珠交出来！"],
+        ["dende", "救救我！"], ["gohan", "别怕！我们来保护你！"], ["dende", "我叫丁迪，是那美克星人。"],
+        ["zarbon", "我是撒保，你们跑不掉的！"], ["krillin", "悟饭，带上丁迪，快飞！"]],
+      matches: [{ name: "多多利亚", portrait: "dodoria", hp: 10 }, { name: "撒保", portrait: "zarbon", hp: 10 }],
+      outro: [["dende", "我带你们去见最长老。"], ["elder", "你们是好孩子。我来帮你们打开潜力。"],
+        ["krillin", "我觉得身体里有好多力量！"], ["gohan", "谢谢最长老！"]],
+      reward: { exp: 240, sticker: "🧓" } },
+    { title: "第二十二章 · 基纽特战队", icon: "💜", place: "那美克星的草原", need: 440, arc: "那美克星篇",
+      intro: [["ginyu", "我们是——基纽特战队！"], ["jeice", "我是吉斯！"], ["burter", "我是巴特，宇宙里我跑得最快！"],
+        ["recoome", "我是利库姆！"], ["guldo", "我是古尔多，我能让时间停下来！"], ["vegeta", "不好，他们很强！"],
+        ["gohan", "我和库林叔叔一起打！"]],
+      matches: [{ name: "古尔多", portrait: "guldo", hp: 6 }, { name: "利库姆", portrait: "recoome", hp: 7 },
+        { name: "巴特和吉斯", portrait: "burter", hp: 7 }, { name: "基纽队长", portrait: "ginyu", hp: 8 }],
+      outro: [["goku", "我来了！我在飞船上练了一百倍的重力！"], ["ginyu", "什么？这么强？"], ["narr", "悟空打败了基纽特战队！"],
+        ["gohan", "爸爸好厉害！"]],
+      reward: { exp: 260, sticker: "💜" } },
+    { title: "第二十三章 · 神龙波伦加", icon: "🐲", place: "那美克星", need: 470, arc: "那美克星篇",
+      intro: [["dende", "七颗那美克星的龙珠都在这里了！"], ["dende", "要说那美克星的话，我来说！"],
+        ["porunga", "我是那美克星的神龙波伦加。我可以实现三个愿望！"], ["krillin", "第一个愿望：让受伤的朋友好起来！"],
+        ["nail", "我是内鬼，最长老让我保护龙珠。"], ["frieza", "我是弗利萨。龙珠是我的！"], ["nail", "你们快走，我来挡住他！"]],
+      matches: [{ name: "弗利萨的冲击波", emoji: "💥", hp: 10 }],
+      outro: [["narr", "内鬼受了重伤，短笛来了，和内鬼合为一体。"], ["piccolo", "我现在更强了！悟饭，我来保护你！"],
+        ["gohan", "短笛先生！"]],
+      reward: { exp: 280, sticker: "🐲" } },
+    { title: "第二十四章 · 超级赛亚人！", icon: "⚡", place: "那美克星", need: 500, arc: "那美克星篇",
+      intro: [["frieza", "你们都打不过我！"], ["narr", "大家都受了重伤，小库林也被打败了。"],
+        ["goku", "小库林！"], ["narr", "悟空非常生气，他的头发变成了金色！"], ["goku", "我是为了保护朋友，而变强的超级赛亚人！"],
+        ["frieza", "怎么可能！"], ["gohan", "爸爸，加油！"], ["narr", "答对汉字，帮超级赛亚人悟空出招！"]],
+      matches: [{ name: "弗利萨", portrait: "frieza", hp: 12 }, { name: "最后的弗利萨", portrait: "frieza", hp: 12 }],
+      outro: [["frieza", "我……输了……"], ["goku", "不要再做坏事了！"], ["narr", "那美克星快要爆炸了！"],
+        ["goku", "大家先坐飞船走，我也会回来的！"]],
+      reward: { exp: 300, sticker: "⚡" } },
+    { title: "第二十五章 · 大家回到地球", icon: "🌏", place: "地球 · 布尔玛家", need: 520, arc: "那美克星篇",
+      intro: [["bulma", "大家都平安回到地球了！"], ["dende", "我是新的那美克星人朋友，谢谢地球的大家！"],
+        ["popo", "用龙珠吧，让受伤的朋友都回来。"], ["porunga", "说出你们的愿望吧。"], ["krillin", "让大家都回到我们身边！"],
+        ["narr", "雅木查、天津饭、饺子、小库林，都回来了！"], ["narr", "答对汉字，帮神龙实现最后的愿望！"]],
+      matches: [{ name: "神龙的愿望", portrait: "porunga", hp: 8 }],
+      outro: [["goku", "大家好！我回来啦！"], ["gohan", "爸爸！"], ["chichi", "悟饭，现在可以好好读书了吧！"],
+        ["roshi", "好朋友，好好练功，好好读书，这就是最强的力量！"], ["narr", "那美克星篇完结！恭喜你，小侠客！"]],
+      reward: { exp: 400, sticker: "🌏" } }
   ];
 
   var story = null;
   function storyProgress(pr) { return pr.story || 0; }
+  /** v7：新章节要认识足够多的字才打开（启蒙模式减半）；1–6 章没有字数要求 */
+  function chapterNeed(ch) { var n = ch.need || 0; return prof && prof.mode === "little" ? Math.round(n / 2) : n; }
   function renderStoryMap() {
     screen = "storyMap"; story = null;
     hideQuiz(); showScene(true); renderHUD();
     $("logo").classList.add("hidden");
     var done = storyProgress(prof);
-    setStory('<div class="big">📖 龙珠故事 · 早期篇</div>跟着小悟空、布尔玛、小库林和龟仙人去冒险，参加天下第一武道会！\n<small>' + (prof.mode === "little" ? "故事会读出来；比赛靠答对汉字。" : "先自己读，不会的字点一下；比赛靠答对汉字。") + '</small>');
+    setStory('<div class="big">📖 龙珠故事</div>跟着小悟空和朋友们去冒险：天下第一武道会、红缎带军、短笛大魔王、赛亚人，一直到那美克星！\n<small>' + (prof.mode === "little" ? "故事会读出来；比赛靠答对汉字。" : "先自己读，不会的字点一下；比赛靠答对汉字。") + '</small>');
     clearMenu();
+    var lc = learnedCount(prof), lastArc = "";
     STORY.forEach(function (ch, i) {
-      var locked = i > done;
-      var label = (i < done ? "✅ " : locked ? "🔒 " : "▶️ ") + ch.icon + " " + ch.title;
-      addBtn(label, function () { playChapter(i); }, { cls: i === done ? "primary" : locked ? "" : "yellow", disabled: locked });
+      var arc = ch.arc || "早期篇";
+      if (arc !== lastArc && (i <= done + 1 || i < 6)) { $("menu").appendChild(el("div", "arc-head", "— " + esc(arc) + " —")); }
+      lastArc = arc;
+      if (i > done + 1 && i >= 6) return;            // 新章节只显示到下一章，后面的保持神秘
+      var needMore = chapterNeed(ch) > lc;
+      var locked = i > done || needMore;
+      var label = (i < done ? "✅ " : locked ? "🔒 " : "▶️ ") + ch.icon + " " + ch.title + (i === done && needMore ? '<small style="display:block">再认识 ' + (chapterNeed(ch) - lc) + " 个字就能打开（现在 " + lc + " / " + chapterNeed(ch) + "）</small>" : "");
+      addBtn(label, function () { playChapter(i); }, { cls: i === done && !needMore ? "primary" : locked ? "" : "yellow", disabled: locked });
     });
+    if (Math.max(done + 1, 5) + 1 < STORY.length) $("menu").appendChild(el("div", "arc-head", "还有 " + (STORY.length - Math.max(done + 1, 5) - 1) + " 章在后面等着你…"));
     addBtn(prof.mode === "little" ? "🏠" : "🏠 回主页", goHome, { cls: "blue small" });
     TTS.say("龙珠故事");
     scrollTop();
@@ -1451,11 +1944,12 @@
     hideQuiz(); showScene(true); renderHUD(); confetti(36); SFX.level();
     var html = '<div class="big">🎉 ' + esc(ch.title) + " 完成！</div>";
     html += first ? "奖励：+" + r.exp + " 经验 · 贴纸 " + r.sticker : "复习通关 +10 经验";
-    if (i + 1 >= STORY.length) html += "\n\n🏆 早期篇全部通关！你真是天下第一的小侠客！";
+    if (i === 5) html += "\n\n🏆 早期篇全部通关！你真是天下第一的小侠客！";
+    if (i + 1 >= STORY.length) html += "\n\n🏆 龙珠故事到那美克星篇全部通关！你是超级小侠客！";
     setStory(html);
     TTS.say(ch.title.split(" · ")[1] + "，完成！");
     clearMenu();
-    if (i + 1 < STORY.length) addBtn("▶️ 下一章：" + STORY[i + 1].title, function () { playChapter(i + 1); }, { cls: "primary" });
+    if (i + 1 < STORY.length) { var nd = chapterNeed(STORY[i + 1]); if (learnedCount(prof) >= nd) addBtn("▶️ 下一章：" + STORY[i + 1].title, function () { playChapter(i + 1); }, { cls: "primary" }); else { setStory(html + "\n\n🔒 下一章「" + esc(STORY[i + 1].title) + "」：再认识 " + (nd - learnedCount(prof)) + " 个字就能打开，去修炼吧！"); addBtn("⚡ 去修炼认字", function () { startSession(); }, { cls: "primary" }); } }
     addBtn("📖 故事目录", renderStoryMap, { cls: "blue" });
     addBtn(prof.mode === "little" ? "🏠" : "🏠 回主页", goHome, { cls: "small" });
   }
@@ -1623,11 +2117,14 @@
 
   /* ═══════════════ v5 · 主动阅读：点字听音、故事书架、龙珠雷达线索 ═══════════════ */
   var NAMES = (typeof STORY_NAMES !== "undefined" ? STORY_NAMES : []).concat(["布尔玛", "龟仙人", "雅木查", "天津饭", "饺子", "蓝琪"])
+    .concat(["乌龙", "普尔", "牛魔王", "琪琪", "红缎带军", "布鲁将军", "桃白白", "卡林大人", "卡林塔", "短笛大魔王", "短笛", "天神", "波波先生", "孙悟空", "孙悟饭", "悟饭", "拉蒂兹", "赛亚人", "北界王", "界王星", "界王", "泡泡", "格列格利", "栽培人", "那巴", "贝吉塔", "那美克星人", "那美克星", "丁迪", "最长老", "内鬼", "撒保", "多多利亚", "弗利萨", "基纽特战队", "基纽", "吉斯", "巴特", "利库姆", "古尔多", "波伦加", "库林", "小库林"])
     .filter(function (x, i, a) { return a.indexOf(x) === i; }).sort(function (a, b) { return b.length - a.length; });
   // 字库里没有的专名用字，以及在句子里读音和字库默认读音不同的词（只覆盖用到的）
   var WORD_PY = {
     "小悟空": ["xiǎo", "wù", "kōng"], "悟空": ["wù", "kōng"], "布尔玛": ["bù", "ěr", "mǎ"], "龟仙人": ["guī", "xiān", "rén"],
-    "饺子": ["jiǎo", "zi"], "跑得": ["pǎo", "de"], "睡觉": ["shuì", "jiào"], "蓝琪": ["lán", "qí"]
+    "饺子": ["jiǎo", "zi"], "跑得": ["pǎo", "de"], "睡觉": ["shuì", "jiào"], "蓝琪": ["lán", "qí"],
+    // v7 新章节里的专名/招式
+    "乌龙": ["wū", "lóng"], "普尔": ["pǔ", "ěr"], "牛魔王": ["niú", "mó", "wáng"], "琪琪": ["qí", "qí"], "红缎带军": ["hóng", "duàn", "dài", "jūn"], "布鲁将军": ["bù", "lǔ", "jiāng", "jūn"], "桃白白": ["táo", "bái", "bái"], "卡林大人": ["kǎ", "lín", "dà", "rén"], "卡林塔": ["kǎ", "lín", "tǎ"], "超神水": ["chāo", "shén", "shuǐ"], "仙豆": ["xiān", "dòu"], "短笛大魔王": ["duǎn", "dí", "dà", "mó", "wáng"], "短笛": ["duǎn", "dí"], "天神": ["tiān", "shén"], "波波先生": ["bō", "bō", "xiān", "sheng"], "孙悟空": ["sūn", "wù", "kōng"], "孙悟饭": ["sūn", "wù", "fàn"], "悟饭": ["wù", "fàn"], "拉蒂兹": ["lā", "dì", "zī"], "赛亚人": ["sài", "yà", "rén"], "界王拳": ["jiè", "wáng", "quán"], "北界王": ["běi", "jiè", "wáng"], "界王星": ["jiè", "wáng", "xīng"], "界王": ["jiè", "wáng"], "泡泡": ["pào", "pao"], "格列格利": ["gé", "liè", "gé", "lì"], "元气弹": ["yuán", "qì", "dàn"], "栽培人": ["zāi", "péi", "rén"], "那巴": ["nà", "bā"], "贝吉塔": ["bèi", "jí", "tǎ"], "那美克星人": ["nà", "měi", "kè", "xīng", "rén"], "那美克星": ["nà", "měi", "kè", "xīng"], "丁迪": ["dīng", "dí"], "最长老": ["zuì", "zhǎng", "lǎo"], "内鬼": ["nèi", "guǐ"], "撒保": ["sā", "bǎo"], "多多利亚": ["duō", "duō", "lì", "yà"], "弗利萨": ["fú", "lì", "sà"], "基纽特战队": ["jī", "niǔ", "tè", "zhàn", "duì"], "基纽": ["jī", "niǔ"], "吉斯": ["jí", "sī"], "巴特": ["bā", "tè"], "利库姆": ["lì", "kù", "mǔ"], "古尔多": ["gǔ", "ěr", "duō"], "波伦加": ["bō", "lún", "jiā"], "龟派气功": ["guī", "pài", "qì", "gōng"], "库林": ["kù", "lín"], "小库林": ["xiǎo", "kù", "lín"]
   };
   var READ_HINT_DELAY = 7000;          // 「整句读给我听」至少等 7 秒，或孩子先点过字
   function learnedSet(pr) { var s = {}; Object.keys(pr.srs).forEach(function (c) { if (pr.srs[c].ok > 0) s[c] = 1; }); return s; }
@@ -1929,13 +2426,15 @@
   }
   // 测试钩子（只读状态 + 少量操作，便于自动化测试）
   global.__xiaoke = {
-    state: function () { return { screen: screen, store: store, prof: prof && prof.id, q: curQ && { c: curQ.c, kind: curQ.kind || null, type: curQ.type, answerKey: curQ.answerKey, options: curQ.options, answer: curQ.answer, title: curQ.title, en: curQ.en, item: curQ.item || null }, session: session && { idx: session.idx, balls: session.balls, len: session.queue.length } }; },
+    state: function () { return { screen: screen, store: store, prof: prof && prof.id, q: curQ && { c: curQ.c, kind: curQ.kind || null, type: curQ.type, answerKey: curQ.answerKey, options: curQ.options, answer: curQ.answer, title: curQ.title, en: curQ.en, item: curQ.item || null }, session: session && { idx: session.idx, balls: session.balls, len: session.queue.length, only: session.only }, story: story && { i: story.i, phase: story.phase, match: story.match } }; },
     makeQuestion: function (mode, c, type) { var pr = newProfile("t", mode, "🧒", "#000"); return makeQuestion(pr, c, type); },
     makeExtra: function (mode, kind, stage) { var pr = newProfile("t", mode, "🧒", "#000"); pr.stage = stage || 0; return makeExtra(pr, kind); },
     english: ENGLISH, charSpeech: charSpeech,
     readers: function () { return READERS.map(function (st) { return { id: st.id, chars: STORY_CHARS[st.id] }; }); },
     makeClue: function (chars) { var pr = newProfile("t", "hero", "🧒", "#000"); chars.split("").forEach(function (c) { pr.srs[c] = { b: 2, due: 0, seen: 1, ok: 1, bad: 0 }; }); return makeClue(pr); },
-    tts: TTS
+    tts: TTS,
+    makeSkill: function (mode, kind, type, lv, chars) { var pr = newProfile("t", mode, "🧒", "#000"); pr.pinyin.lv = lv || 0; (chars || "").split("").forEach(function (c) { pr.srs[c] = { b: 2, due: 0, seen: 1, ok: 1, bad: 0 }; }); return kind === "py" ? makePinyin(pr, type) : makeRadical(pr, type); },
+    radicals: RADICALS, builds: BUILDS
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })(window);
