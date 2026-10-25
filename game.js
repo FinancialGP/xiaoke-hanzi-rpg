@@ -69,7 +69,8 @@
   var SFX = {
     click: function () { beep(520, 0.05); },
     correct: function () { beep(660, 0.1); setTimeout(function () { beep(880, 0.14); }, 90); },
-    soft: function () { beep(300, 0.15, "sine", 0.06); },          // 答错：温和的提示音
+    soft: function () { beep(300, 0.15, "sine", 0.06); },
+    hit: function () { beep(220, 0.09, "square", 0.05); setTimeout(function () { beep(150, 0.16, "sawtooth", 0.04); }, 80); },   // v7.5 被打中          // 答错：温和的提示音
     blast: function () { [300, 500, 800, 1200].forEach(function (f, i) { setTimeout(function () { beep(f, 0.12, "sawtooth", 0.04); }, i * 60); }); },
     level: function () { [523, 659, 784, 1046].forEach(function (f, i) { setTimeout(function () { beep(f, 0.16); }, i * 110); }); },
     ball: function () { beep(1046, 0.08); setTimeout(function () { beep(1318, 0.1); }, 70); },
@@ -1031,6 +1032,7 @@
   function addBtn(label, fn, opts) { var b = btn(label, fn, opts); $("menu").appendChild(b); return b; }
   function speedLines(on) { $("speed").classList.toggle("hidden", !on); }
   function showScene(show) { $("scene").classList.toggle("hidden", !show); }
+  function hpEnd() { hp = null; }
   function hideQuiz() { curQ = null; $("quiz").classList.add("hidden"); $("quiz").innerHTML = ""; speedLines(false); }
   function updateWho() {
     var w = $("who");
@@ -1161,7 +1163,7 @@
   }
   function answer(b, key) {
     var q = curQ, ctx = curCtx;
-    if (!q || q.done || b.disabled) return;
+    if (!q || q.done || b.disabled || q.koPending) return;
     if (key === q.answerKey) {
       q.done = true;
       document.querySelectorAll("#opts .opt").forEach(function (x) { x.disabled = true; });
@@ -1176,12 +1178,13 @@
       b.disabled = true; b.classList.add("wrong");
       SFX.soft();
       showHint(true);
-      if (!q.kind) setTimeout(function () { if (curQ === q && !q.done) sayAnswer(q); }, 350);
+      if (!q.kind) setTimeout(function () { if (curQ === q && !q.done && !q.hpSaid) sayAnswer(q); }, 350);
       if (q.kind === "clue" && q.wrongs === 1) { var ln = $("hintLine"); if (ln) ln.innerHTML = "👀 再读一读：龙珠在哪里？"; }
       var left = Array.prototype.filter.call(document.querySelectorAll("#opts .opt"), function (x) { return !x.disabled; });
       if (q.wrongs >= 2 || ctx.pr.mode === "little") {
         left.forEach(function (x) { if (x.dataset.key === q.answerKey) x.classList.add("glow"); });
       }
+      if (ctx.hp) hpHit(q);
       if (ctx.onWrong) ctx.onWrong(q);
     }
   }
@@ -1196,7 +1199,7 @@
 
   /* ═══════════════ 选人页（标题） ═══════════════ */
   var MAX_PROFILES = 4;
-  function renderTitle() {
+  function renderTitle() { hpEnd();
     screen = "title"; useProfile(null);
     hideQuiz(); showScene(true); renderHUD(); closeOverlay();
     $("logo").classList.remove("hidden");
@@ -1312,7 +1315,7 @@
     if (!editing && !("ontouchstart" in global)) setTimeout(function () { inp.focus(); }, 50);
   }
 
-  function goHome() { if (!prof) return renderTitle(); if (prof.mode === "little") renderLittleHub(); else renderHub(); }
+  function goHome() { hpEnd(); if (!prof) return renderTitle(); if (prof.mode === "little") renderLittleHub(); else renderHub(); }
 
   /* ═══════════════ 侠客模式主页 ═══════════════ */
   function placeHTML(pr) {
@@ -1395,7 +1398,7 @@
   function trackerHTML() {
     var s = '<div class="tracker" id="tracker"><span class="trk-ava aura">' + avatarHTML(session.pr.avatar, 44) + "</span>";
     for (var i = 1; i <= SESSION_LEN; i++) s += '<span id="slot' + i + '">' + ballSVG(i, 38, i <= session.balls ? "" : "empty") + "</span>";
-    return s + "</div>";
+    return s + "</div>" + hpHearts();
   }
   /** 7 题里换掉 1–2 题为数学/英语（优先换复习字，第一题不换） */
   function withExtras(queue) {
@@ -1420,7 +1423,7 @@
       pr: prof, queue: queue, only: skillOnly ? only : null,
       idx: 0, balls: 0, first: 0, missed: [], introduced: {}, newChars: []
     };
-    screen = "session";     nextInSession();
+    hpStart(prof); screen = "session";     nextInSession();
   }
   function nextInSession() {
     if (!session) return goHome();
@@ -1440,7 +1443,7 @@
     if (item.clue) tag = "📡 雷达线索 · " + tag;
     if (item.skill) tag = (item.skill === "py" ? "🅰️ 拼音 · " : "🧩 偏旁 · ") + tag;
     showQuiz(q, {
-      pr: pr, tag: tag, header: trackerHTML(), menu: sessionMenu(),
+      pr: pr, tag: tag, header: trackerHTML(), menu: sessionMenu(), hp: true, rehead: trackerHTML,
       onDone: function (first, b) {
         if (item.skill) {
           recordSkill(pr, item.skill, q.item, first);
@@ -1583,8 +1586,46 @@
     return c;
   }
 
+  /* ═══════════════ v7.5 小侠客的气血（答错扣血，0 血吃仙豆复活；不扣经验、不忘字） ═══════════════ */
+  var HP_LINES = ["哎呀，被打中了！再想想！", "哎哟！没关系，再看一看！", "被打中啦！小心，再试一次！"];
+  var HP_KO = "气血用完啦！别怕，我们先复习一下刚才答错的。", HP_REVIVE = "吃一颗仙豆，满血复活！继续加油！";
+  var hp = null;   // 只在一场战斗/修炼里用，不进存档
+  function hpMax(pr) { return pr && pr.mode === "little" ? 8 : 5; }
+  function hpStart(pr, max) { hp = { cur: max || hpMax(pr), max: max || hpMax(pr), missed: [], beans: 0, little: !!(pr && pr.mode === "little") }; }
+  function hpHearts() { if (!hp) return ""; var s = ""; for (var i = 0; i < hp.max; i++) s += '<span class="ht' + (i < hp.cur ? "" : " lost") + '">' + (i < hp.cur ? "❤️" : "🤍") + "</span>";
+    return '<div class="phearts" id="pHearts" role="img" aria-label="气血 ' + hp.cur + " / " + hp.max + '">' + s + "</div>"; }
+  function hpPct() { return hp ? Math.round(hp.cur / hp.max * 100) : 100; }
+  function hpRefresh() { var h = $("pHearts"); if (h) h.outerHTML = hpHearts(); var bar = document.querySelector(".arena .fighter .hp"); if (bar) bar.style.width = hpPct() + "%"; }
+  /** 答错时调用：扣血 + 受击动画 + 音效 + 语音；启蒙模式每题最多扣 1 颗心，侠客模式每题最多扣 2 颗 */
+  function hpHit(q) {
+    if (!hp || hp.cur <= 0) return;
+    if (q.wrongs > (hp.little ? 1 : 2)) return;
+    hp.cur--; if (q.c && hp.missed.indexOf(q.c) === -1) hp.missed.push(q.c); else if (!q.c && q.title && hp.missed.indexOf("q:" + q.title) === -1) hp.missed.push("q:" + q.title);
+    hpRefresh(); SFX.hit();
+    var me = $("meEm") || document.querySelector(".trk-ava"), box = $("quiz");
+    [me, box].forEach(function (x) { if (x) { x.classList.remove("hit"); void x.offsetWidth; x.classList.add("hit"); } });
+    var ht = $("pHearts"); if (ht) { var lost = ht.querySelectorAll(".ht.lost"); if (lost[0]) lost[0].classList.add("pop"); }
+    q.hpSaid = true; TTS.say(pick(HP_LINES));
+    if (hp.cur <= 0) { q.koPending = true; setTimeout(function () { if (curQ === q) hpKO(); }, 1400); }
+    else if (!q.kind) setTimeout(function () { if (curQ === q && !q.done) sayAnswer(q); }, 1900);
+  }
+  /** 0 血：先复习答错的字，再吃仙豆满血继续（同一道题重新来，敌人的血不变） */
+  function hpKO() {
+    var q = curQ, ctx = curCtx; if (!q || !ctx) return;
+    hideQuiz(); showScene(true); SFX.soft();
+    var list = hp.missed.slice(-6), html = '<div class="big">😵 气血用完啦！</div>别怕～先复习一下刚才答错的' + (list.some(function (x) { return x.indexOf("q:") !== 0; }) ? "字" : "题") + "：<div class=\"koreview\">";
+    list.forEach(function (c) { html += c.indexOf("q:") === 0 ? '<div class="kochar small">' + esc(c.slice(2)) + "</div>" : '<button type="button" class="kochar" data-c="' + esc(c) + '">' + esc(c) + "<small>" + charHint(c) + "</small></button>"; });
+    html += '</div><small>学会的字、经验都不会少 · Nothing is lost.</small>';
+    setStory(html); var back = screen; screen = "ko";
+    [].forEach.call(document.querySelectorAll("#story .kochar[data-c]"), function (b) { b.onclick = function () { SFX.click(); TTS.say(charSpeech(b.dataset.c)); }; });
+    var chars = list.filter(function (x) { return x.indexOf("q:") !== 0; }), k = 0;
+    TTS.say(HP_KO); var tm = setTimeout(function next() { if (screen !== "ko" || k >= chars.length) return; TTS.say(charSpeech(chars[k++])); tm = setTimeout(next, 2200); }, 3600);
+    clearMenu();
+    addBtn('<span style="font-size:1.6rem">🫘</span> 吃仙豆，满血复活！', function () { clearTimeout(tm); screen = back; hp.cur = hp.max; hp.beans++; hp.missed = []; SFX.level(); TTS.say(HP_REVIVE); q.wrongs = 0; q.done = false; q.koPending = false;
+      var keep = ctx.header; if (typeof ctx.rehead === "function") ctx.header = ctx.rehead(); showQuiz(q, ctx); if (!ctx.rehead) ctx.header = keep; }, { cls: "primary" });
+  }
   function arenaHTML(leftAva, leftName, leftPct, foe, foePct) {
-    return '<div class="panel arena"><div class="fighter"><span class="em aura" id="meEm">' + leftAva + '</span><div class="nm">' + esc(leftName) + '</div><div class="bar"><span class="hp" style="width:' + leftPct + '%"></span></div></div>' +
+    return '<div class="panel arena"><div class="fighter"><span class="em aura" id="meEm">' + leftAva + '</span><div class="nm">' + esc(leftName) + '</div><div class="bar"><span class="hp" style="width:' + (hp ? hpPct() : leftPct) + '%"></span></div>' + hpHearts() + "</div>" +
       '<div class="vs">VS</div><div class="fighter"><span class="em" id="foeEm">' + (foe.html || esc(foe.emoji)) + '</span><div class="nm">' + esc(foe.name) + '</div><div class="bar"><span class="hp" style="width:' + foePct + '%"></span></div></div></div>';
   }
   /* ═══════════════ 双人：同心协力 ═══════════════ */
@@ -1607,6 +1648,7 @@
   function startDuo(a, b) {
     var boss = pick(DUO_BOSSES);
     duo = { players: [a, b], turn: 0, boss: { name: boss.name, emoji: boss.emoji }, hp: 10, max: 10, turns: 0 };
+    hpStart(a.mode === "little" || b.mode === "little" ? { mode: "little" } : a, 8);
     useProfile(a);
     screen = "duo"; $("logo").classList.add("hidden");
     TTS.say("同心协力，一起打败" + boss.name + "！");
@@ -1622,7 +1664,7 @@
     var header = '<div class="turnbar" style="background:' + pr.color + '">轮到 ' + avatarHTML(pr.avatar, 40) + " " + esc(pr.name) + (AVATAR_INFO[pr.avatar] ? "（" + esc(AVATAR_INFO[pr.avatar].label) + "）" : "") + "！</div>" +
       arenaHTML('<span class="duoava cur">' + avatarHTML(pr.avatar, 66) + '</span><span class="duoava">' + avatarHTML(other.avatar, 50) + "</span>", "同心协力", 100, duo.boss, duo.hp / duo.max * 100);
     showQuiz(q, {
-      pr: pr, tag: "🤝 双人", header: header,
+      pr: pr, tag: "🤝 双人", header: header, hp: true,
       menu: [["🏠 结束双人", function () { duo = null; renderTitle(); }, { cls: "small" }]],
       onDone: function (first) {
         if (q.kind) recordExtra(pr, q.kind, first); else recordResult(pr, c, first);
@@ -1949,6 +1991,7 @@
   function startStoryMatch() {
     var m = story.ch.matches[story.match];
     story.foe = { name: m.name, emoji: m.emoji || "", html: m.portrait ? portraitHTML(m.portrait, 72) : null, hp: m.hp * 2, max: m.hp * 2 };
+    hpStart(prof);
     TTS.say((m.portrait ? "对手：" : "挑战：") + m.name + "！答对汉字就能出招！");
     storyTurn();
   }
@@ -1960,7 +2003,8 @@
     if (!q) q = makeQuestion(prof, c);
     var tag = clueTurn ? "📡 先找到龙珠才能出招！" : ch.matches.length > 1 ? "第 " + (story.match + 1) + " 场 / " + ch.matches.length : "📖 " + ch.title.split(" · ")[0];
     showQuiz(q, {
-      pr: prof, tag: tag, header: arenaHTML(avatarHTML(prof.avatar, 72), prof.name, 100, f, f.hp / f.max * 100),
+      pr: prof, tag: tag, header: arenaHTML(avatarHTML(prof.avatar, 72), prof.name, 100, f, f.hp / f.max * 100), hp: true,
+      rehead: function () { return arenaHTML(avatarHTML(prof.avatar, 72), prof.name, 100, f, f.hp / f.max * 100); },
       menu: [["⏸ 回故事目录", renderStoryMap, { cls: "small" }]],
       onDone: function (first) {
         if (q.kind === "clue") { if (first) prof.extra.clue = (prof.extra.clue || 0) + 1; } else if (q.kind) recordExtra(prof, q.kind, first); else recordResult(prof, c, first);
@@ -2478,7 +2522,7 @@
   }
   // 测试钩子（只读状态 + 少量操作，便于自动化测试）
   global.__xiaoke = {
-    state: function () { return { screen: screen, store: store, prof: prof && prof.id, q: curQ && { c: curQ.c, kind: curQ.kind || null, type: curQ.type, answerKey: curQ.answerKey, options: curQ.options, answer: curQ.answer, title: curQ.title, en: curQ.en, item: curQ.item || null }, session: session && { idx: session.idx, balls: session.balls, len: session.queue.length, only: session.only }, story: story && { i: story.i, phase: story.phase, match: story.match } }; },
+    state: function () { return { hp: hp && { cur: hp.cur, max: hp.max, missed: hp.missed.slice() }, screen: screen, store: store, prof: prof && prof.id, q: curQ && { c: curQ.c, kind: curQ.kind || null, type: curQ.type, answerKey: curQ.answerKey, options: curQ.options, answer: curQ.answer, title: curQ.title, en: curQ.en, item: curQ.item || null }, session: session && { idx: session.idx, balls: session.balls, len: session.queue.length, only: session.only }, story: story && { i: story.i, phase: story.phase, match: story.match } }; },
     makeQuestion: function (mode, c, type) { var pr = newProfile("t", mode, "🧒", "#000"); return makeQuestion(pr, c, type); },
     makeExtra: function (mode, kind, stage) { var pr = newProfile("t", mode, "🧒", "#000"); pr.stage = stage || 0; return makeExtra(pr, kind); },
     english: ENGLISH, charSpeech: charSpeech,
@@ -2495,6 +2539,7 @@
       DB.forEach(function (h) { var c = h.c; add(charSpeech(c)); add(introSpeech(c, false)); add("哪个是" + c); (h.w || []).forEach(function (w) { add(w.w); }); });
       add(["你好，小侠客！", "点大按钮，开始！", "七颗龙珠集齐了！神龙出现了！说出你的愿望吧！", "龙珠故事", "读完了！真棒！", "哪个词里有", "数一数，有几个？", "这个用英语怎么说？",
         "拼一拼", "读一读拼音，找一找是哪个字", "和什么有关？", "哪个字有", "哪个字和", "是一家？", "加", "是哪个字？"]);
+      add(HP_LINES); add([HP_KO, HP_REVIVE]);
       DUO_BOSSES.forEach(function (b) { add("同心协力，一起打败" + b.name + "！"); });
       STORY.forEach(function (ch) {
         (ch.intro || []).concat(ch.outro || []).forEach(function (sc) { addText(sc[1]); });
