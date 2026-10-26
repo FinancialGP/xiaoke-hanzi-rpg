@@ -1184,6 +1184,7 @@
     w.innerHTML = prof ? avatarHTML(prof.avatar, 34) + " " + esc(prof.name) + voice : "选择小侠客" + voice;
     $("homeBtn").classList.toggle("hidden", !prof);
     $("settingsBtn").classList.toggle("hidden", !prof);
+    if ($("saveBtn")) $("saveBtn").classList.toggle("hidden", !prof);
   }
   function scrollTop() { try { global.scrollTo(0, 0); } catch (e) { /* */ } }
 
@@ -2392,44 +2393,56 @@
   }
 
   /** ⚙️ → 💾 存档 / 读档 */
-  function renderSaves() {
-    if (!prof) return renderTitle();
-    screen = "saves"; hideQuiz(); showScene(true); renderHUD(); clearMenu(); scrollTop();
-    setStory('<div class="big">💾 存档 / 读档 · ' + esc(prof.name) + "</div>每答一题都会自动保存。这里可以另外存 3 个手动存档，或者导出存档码换到别的设备上玩。");
+  /* v8.1：存档面板（右上角 💾 按钮，首页和游戏中都能打开；不离开当前画面） */
+  function inPlay() { return !!(session || duo || story || reading); }
+  function stopPlay() { session = null; duo = null; story = null; try { clearReadTimers(); } catch (e) { /* */ } reading = null; try { VOICE.stop(); } catch (e) { /* */ } }
+  function closeSavePanel() { var o = $("savePanel"); if (o) { o.classList.add("hidden"); o.innerHTML = ""; } }
+  function renderSaves() { openSavePanel(); }
+  function openSavePanel() {
+    if (!prof) return toast("先选一个小侠客哦");
+    var o = $("savePanel"); if (!o) { o = el("div", "savepanel hidden"); o.id = "savePanel"; document.body.appendChild(o); }
+    o.innerHTML = ""; o.classList.remove("hidden");
+    var box = el("div", "savebox"); o.appendChild(box);
+    o.onclick = function (e) { if (e.target === o) closeSavePanel(); };
+    var x = btn("✖", closeSavePanel, { cls: "round-btn saveclose" }); x.setAttribute("aria-label", "关闭存档"); box.appendChild(x);
+    box.appendChild(el("div", "savetitle", "💾 存档 · " + esc(prof.name)));
+    box.appendChild(el("div", "savestatus", "✅ 自动存档已开启 · 每答一题都会保存" + (prof.savedAt ? "<br><small>上次自动存档：" + fmtTime(prof.savedAt) + "</small>" : "")));
+    if (!inPlay() && resumeLabel(prof)) box.appendChild(btn("▶️ 继续游戏 · " + esc(resumeLabel(prof)), function () { closeSavePanel(); resumeGame(); }, { cls: "primary" }));
     var slots = loadSlots(prof);
     for (var i = 0; i < 3; i++) (function (i) {
-      var s = slots[i], row = el("div", "slotrow");
+      var sl = slots[i], row = el("div", "slotrow");
       var nm = ["存档一", "存档二", "存档三"][i];
-      row.appendChild(el("div", "slotinfo", esc(s && s.name ? s.name : nm) + (s ? "<small>" + fmtTime(s.at) + " · " + (s.data.mode === "hero" ? "Lv." + s.data.player.level + " · " : "") +
-        learnedCount(s.data) + " 字 · 故事 " + (s.data.story || 0) + " 章" + (resumeLabel(s.data) ? " · 停在" + esc(resumeLabel(s.data)) : "") + "</small>" : "<small>（空）</small>")));
+      row.appendChild(el("div", "slotinfo", esc(sl && sl.name ? sl.name : nm) + (sl ? "<small>" + fmtTime(sl.at) + " · " + (sl.data.mode === "hero" ? "Lv." + sl.data.player.level + " · " : "") +
+        learnedCount(sl.data) + " 字 · 故事 " + (sl.data.story || 0) + " 章" + (resumeLabel(sl.data) ? " · 停在" + esc(resumeLabel(sl.data)) : "") + "</small>" : "<small>（空）</small>")));
       var r = el("div", "row");
       r.appendChild(btn("💾 保存", function () {
-        if (s && !global.confirm("存档" + (i + 1) + " 已经有内容，要覆盖吗？")) return;
-        var name = global.prompt ? global.prompt("给" + nm + "起个名字（用小名就好，比如「小龙」）：", s && s.name || prof.name) : null;
-        name = String(name == null ? (s && s.name || nm) : name).replace(/[<>]/g, "").trim().slice(0, 12) || nm;
-        slots[i] = { at: now(), name: name, data: clone(prof) };
-        if (writeSlots(prof, slots)) toast("💾 已存到存档" + (i + 1));
-        renderSaves();
-      }, { cls: "blue small" }));
+        if (sl && !global.confirm(nm + " 已经有内容，要覆盖吗？")) return;
+        var name = global.prompt ? global.prompt("给" + nm + "起个名字（用小名就好，比如「小龙」）：", sl && sl.name || prof.name) : null;
+        name = String(name == null ? (sl && sl.name || nm) : name).replace(/[<>]/g, "").trim().slice(0, 12) || nm;
+        saveStore(true); slots[i] = { at: now(), name: name, data: clone(prof) };
+        if (writeSlots(prof, slots)) toast("💾 已存到" + nm);
+        openSavePanel();
+      }, { cls: "blue" }));
       r.appendChild(btn("📂 读取", function () {
-        if (!s) return toast("存档" + (i + 1) + " 是空的");
-        if (!global.confirm("读取存档" + (i + 1) + "（" + fmtTime(s.at) + "）？\n现在的进度会被这个存档覆盖。")) return;
-        var pr = clone(s.data); pr.id = prof.id; pr.name = prof.name; normalizeProfile(pr);
-        store.profiles[store.profiles.indexOf(prof)] = pr; useProfile(pr); saveStore();
-        toast("📂 已读取存档" + (i + 1)); renderSaves();
-      }, { cls: "small", disabled: !s }));
+        if (!sl) return toast(nm + " 是空的");
+        if (!global.confirm("读取「" + (sl.name || nm) + "」（" + fmtTime(sl.at) + "）？\n现在的进度会被这个存档覆盖。")) return;
+        stopPlay();
+        var pr = clone(sl.data); pr.id = prof.id; pr.name = prof.name; normalizeProfile(pr);
+        store.profiles[store.profiles.indexOf(prof)] = pr; useProfile(pr); saveStore(true);
+        toast("📂 已读取" + nm); closeSavePanel(); goHome();
+      }, { disabled: !sl }));
       r.appendChild(btn("🗑️ 删除", function () {
-        if (!s) return;
-        if (!global.confirm("真的要删除「" + (s.name || nm) + "」吗？删了就找不回来了。\n（现在正在玩的进度不会受影响）")) return;
+        if (!sl) return;
+        if (!global.confirm("真的要删除「" + (sl.name || nm) + "」吗？删了就找不回来了。\n（现在正在玩的进度不会受影响）")) return;
         slots[i] = null; if (writeSlots(prof, slots)) toast("🗑️ 已删除" + nm);
-        renderSaves();
-      }, { cls: "small red", disabled: !s }));
-      row.appendChild(r);
-      $("menu").appendChild(row);
+        openSavePanel();
+      }, { cls: "red", disabled: !sl }));
+      row.appendChild(r); box.appendChild(row);
     })(i);
-    addBtn("📤 导出存档（存档码 / 文件）", function () { renderExport(); }, { cls: "yellow" });
-    addBtn("📥 导入存档", function () { renderImport(renderSaves); }, { cls: "yellow" });
-    addBtn("↩️ 返回设置", renderSettings, { cls: "blue" });
+    var r2 = el("div", "row");
+    r2.appendChild(btn("📤 导出存档码", function () { if (inPlay() && !global.confirm("先离开这一关去导出？进度已自动保存。")) return; stopPlay(); closeSavePanel(); renderExport(); }, { cls: "yellow" }));
+    r2.appendChild(btn("📥 导入存档码", function () { if (inPlay() && !global.confirm("先离开这一关去导入？进度已自动保存。")) return; stopPlay(); closeSavePanel(); renderImport(goHome); }, { cls: "yellow" }));
+    box.appendChild(r2);
   }
   function loadSlots(pr) {
     try { var a = JSON.parse(localStorage.getItem(SLOT_KEY + pr.id) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; }
@@ -2454,7 +2467,7 @@
     r.appendChild(btn("⬇️ 下载 .json", function () { downloadText(JSON.stringify(savePayload(list), null, 1), "xiaoke-save-" + day + ".json", "application/json"); }, { cls: "blue small" }));
     $("menu").appendChild(r);
     if (prof && store.profiles.length > 1) addBtn(all ? "只导出 " + esc(prof.name) : "改成导出全部玩家", function () { renderExport(!all); }, { cls: "small" });
-    addBtn("↩️ 返回", prof ? renderSaves : renderTitle, { cls: "small" });
+    addBtn("↩️ 返回", prof ? function () { goHome(); openSavePanel(); } : renderTitle, { cls: "small" });
   }
 
   function renderImport(back) {
@@ -2763,7 +2776,6 @@
       prof.mode = prof.mode === "little" ? "hero" : "little"; prof.stage = 0; saveStore(); renderSettings();
     }, { cls: "small" });
     addBtn("✏️ 改名字 / 换头像：" + avatarHTML(prof.avatar, 40) + (AVATAR_INFO[prof.avatar] ? " " + esc(AVATAR_INFO[prof.avatar].label) : ""), function () { renderProfileForm(prof); }, { cls: "small" });
-    addBtn("💾 存档 / 读档（导出、导入、3 个存档位）", renderSaves, { cls: "yellow small" });
     addBtn("⏩ 字太简单？直接解锁下一批字", function () { prof.stage++; saveStore(); toast("已解锁 " + unlockedChars(prof).length + " 字"); renderSettings(); }, { cls: "small" });
     addBtn("🗑️ 删除这个玩家", function () {
       if (!global.confirm("确定删除 " + prof.name + " 的全部进度？不能恢复！")) return;
@@ -2787,6 +2799,7 @@
       if ((session || duo || story || reading) && !global.confirm("回到选人页？进度已自动保存。")) return;
       session = null; duo = null; story = null; clearReadTimers(); reading = null; saveStore(); renderTitle();
     };
+    if ($("saveBtn")) $("saveBtn").onclick = function () { SFX.click(); openSavePanel(); };
     $("settingsBtn").onclick = function () { SFX.click(); if (session || duo || story) { toast("先完成这一关再设置哦"); return; } renderSettings(); };
     if ($("rateBtnTop")) { var paintRate = function () { $("rateBtnTop").textContent = VOICE.rate === 0.75 ? "🐢" : "🐇"; $("rateBtnTop").setAttribute("aria-label", VOICE.rate === 0.75 ? "朗读速度：慢速0.75" : "朗读速度：正常"); };
       VOICE.onRate = paintRate; paintRate(); $("rateBtnTop").onclick = function () { VOICE.setRate(VOICE.rate === 0.75 ? 1 : 0.75); toast(VOICE.rate === 0.75 ? "🐢 慢速 0.75" : "🐇 正常速度"); TTS.say("你好，小侠客！"); }; }
@@ -2800,7 +2813,7 @@
     renderTitle();
   }
   // 测试钩子（只读状态 + 少量操作，便于自动化测试）
-  global.__xiaoke = { sceneArtSrc: sceneArtSrc,
+  global.__xiaoke = { openSaves: function () { openSavePanel(); }, sceneArtSrc: sceneArtSrc,
     // v8.0 测试钩子：不重复出题 + 存档
     qdeck: { fresh: freshQ, sig: qSig, newRound: qNewRound, seen: QSEEN,
       gen: function (pr, mode) { return mode === "py" ? makePinyin(pr) : mode === "rad" ? makeRadical(pr) : mode === "math" ? makeExtra(pr, "math") : mode === "eng" ? makeExtra(pr, "eng") : mode === "clue" ? makeClue(pr) : maybeExtra(pr) || makeQuestion(pr, pickOneChar(pr)); },
